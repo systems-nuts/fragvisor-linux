@@ -1,0 +1,38 @@
+
+If you cannot boot
+RAMDISK SIZE
+CONFIG_BLK_DEV_RAM=y
+CONFIG_BLK_DEV_RAM_COUNT=2
+CONFIG_BLK_DEV_RAM_SIZE=2097152 // 2G
+
+- Don't upload copy_patch_to_desktop_dropbox.sh (echo5 will not be able to apply)
+
+
+
+
+
+Disable KPTI
+CONFIG_PAGE_TABLE_ISOLATION=n
+
+Intel MPX Diasable (Intel® Memory Protection Extensions (Intel® MPX))
+When MPX is enable, remote cannot malloc/calloc memory. The address will be GROWNDOWN and thus DSM cannot handle.
+
+
+[kernel config]
+Problem 1: when moving from echo to mir. During bootup, remote node invokes hypercall (VM_EXIT -> handle_vmcall())
+Solution 1:
+Disable CONFIG_PARAVIRT_SPINLOCKS
+	mir originally CONFIG_PARAVIRT_SPINLOCKS=y
+	echo CONFIG_PARAVIRT_SPINLOCKS=n
+	so I disable CONFIG_PARAVIRT_SPINLOCKS on mir as well
+and
+Enable
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
+CONFIG_FRAMEBUFFER_CONSOLE_ROTATION=y
+and
+Disable CONFIG_X86_DEBUG_FPU
+One of these above makes hypercall
+
+For our convinience, we init a few things only on vcpu0 in the guest kernel.
+Search "pophype_set_cpu0" for the things.
