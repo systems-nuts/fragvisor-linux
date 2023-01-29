@@ -56,7 +56,7 @@
 #include <popcorn/debug.h>
 #include <popcorn/types.h>
 #include <popcorn/bundle.h>
-#include <popcorn/hype_kvm.h> // for popcorn/type.h
+#include <popcorn/hype_kvm.h>
 #endif
 
 #include "trace.h"
@@ -88,14 +88,10 @@ static bool __read_mostly enable_unrestricted_guest = 1;
 module_param_named(unrestricted_guest,
 			enable_unrestricted_guest, bool, S_IRUGO);
 
-//static bool __read_mostly enable_ept_ad_bits = 1;
-//static bool __read_mostly enable_ept_ad_bits = 0; /* pophype - dsm traffic - solve ept walk always cayses write fault */
-
-//#if !GUEST_KERNEL_OPTIMIZE
 #if !GUEST_KERNEL_OPTIMIZE_EPT_AD
 static bool __read_mostly enable_ept_ad_bits = 1;
 #else
-static bool __read_mostly enable_ept_ad_bits = 0; /* pophype - dsm traffic - solve ept walk always cayses write fault */
+static bool __read_mostly enable_ept_ad_bits = 0; /* pophype - dsm traffic - solve ept walk always causes write fault */
 #endif
 module_param_named(eptad, enable_ept_ad_bits, bool, S_IRUGO);
 
@@ -873,9 +869,6 @@ static inline struct vmcs12 *get_vmcs12(struct kvm_vcpu *vcpu)
 static struct page *nested_get_page(struct kvm_vcpu *vcpu, gpa_t addr)
 {
 	struct page *page = kvm_vcpu_gfn_to_page(vcpu, addr >> PAGE_SHIFT);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	BUG_ON("gfn_to_pfn() is a write fault"); /* pophype */
-#endif
 	if (is_error_page(page))
 		return NULL;
 
@@ -1366,15 +1359,6 @@ static void vmcs_clear(struct vmcs *vmcs)
 
 static inline void loaded_vmcs_init(struct loaded_vmcs *loaded_vmcs)
 {
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG && POPHYPE_MIGRATE_VERBOSE_DEBUG
-	static int cnt = 0;
-	PHMIGRATEVPRINTK("-------- %s(): <?>'s vmcs loaded_vmcs %p "
-				"set loaded_vmcs->cpu (host cpu) from %d to -1 #%d\n",
-				__func__, loaded_vmcs, loaded_vmcs->cpu, cnt);
-	if ((cnt++ % 100) == 0) {
-		dump_stack(); /* turn on to debug why this happens in default */
-	}
-#endif
 	vmcs_clear(loaded_vmcs->vmcs);
 	loaded_vmcs->cpu = -1;
 	loaded_vmcs->launched = 0;
@@ -1462,16 +1446,6 @@ static void loaded_vmcs_clear(struct loaded_vmcs *loaded_vmcs)
 	int cpu = loaded_vmcs->cpu;
 
 	if (cpu != -1) {
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG && POPHYPE_MIGRATE_VERBOSE_DEBUG
-		static int cnt = 0;
-		PHMIGRATEVPRINTK("------- %s(): host cpu %d ------- #%d\n", __func__, cpu, cnt);
-		if ((cnt++ % 100) == 0) {
-			/* From ...
-				kvm_arch_vcpu_load()
-				vmx_vcpu_load() */
-			dump_stack(); /* turn on to debug why this happens in default */
-		}
-#endif
 		smp_call_function_single(cpu,
 			 __loaded_vmcs_clear, loaded_vmcs, 1);
 	}
@@ -1817,18 +1791,18 @@ static void add_atomic_switch_msr(struct vcpu_vmx *vmx, unsigned msr,
 	switch (msr) {
 	case MSR_EFER:
 		if (cpu_has_load_ia32_efer) {
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
-		 PHMIGRATEPRINTK("[pophypemigrate][diff][efer] %s(): <%d> overwrite "
-				"guest/host efer guest/host val %llx %llx (before W: GUEST_IA32_EFER %lx). "
-				"This is the only place in the kernel\n",
-				__func__, vmx->vcpu.vcpu_id, guest_val, host_val, vmcs_readl(GUEST_IA32_EFER));
+#if defined(CONFIG_POPCORN_HYPE)
+			PHMIGRATEPRINTK("[pophypemigrate][diff][efer] %s(): <%d> overwrite "
+					"guest/host efer guest/host val %llx %llx (before W: GUEST_IA32_EFER %lx). "
+					"This is the only place in the kernel\n",
+					__func__, vmx->vcpu.vcpu_id, guest_val, host_val, vmcs_readl(GUEST_IA32_EFER));
 #if HACK_GUEST_EFER
-		if (vmx->vcpu.vcpu_id && !my_nid && !guest_val) {
-			guest_val = 0x801;
-			 printk("[pophypemigrate][diff][efer] %s(): <%d> "
+			if (vmx->vcpu.vcpu_id && !my_nid && !guest_val) {
+				guest_val = 0x801;
+				printk("[pophypemigrate][diff][efer] %s(): <%d> "
 					"HACK HACK HACK overwrite guest efer GUEST_IA32_EFER\n",
 					__func__, vmx->vcpu.vcpu_id);
-		}
+			}
 #endif
 #endif
 			add_atomic_switch_msr_special(vmx,
@@ -1837,11 +1811,11 @@ static void add_atomic_switch_msr(struct vcpu_vmx *vmx, unsigned msr,
 					GUEST_IA32_EFER,
 					HOST_IA32_EFER,
 					guest_val, host_val);
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
-		 PHMIGRATEPRINTK("[pophypemigrate][diff][efer] %s(): <%d> overwrite "
-				"guest/host efer guest/host val %llx %llx (after W: GUEST_IA32_EFER %lx). "
-				"This is the only place in the kernel\n",
-				__func__, vmx->vcpu.vcpu_id, guest_val, host_val, vmcs_readl(GUEST_IA32_EFER));
+#if defined(CONFIG_POPCORN_HYPE)
+			PHMIGRATEPRINTK("[pophypemigrate][diff][efer] %s(): <%d> overwrite "
+					"guest/host efer guest/host val %llx %llx (after W: GUEST_IA32_EFER %lx). "
+					"This is the only place in the kernel\n",
+					__func__, vmx->vcpu.vcpu_id, guest_val, host_val, vmcs_readl(GUEST_IA32_EFER));
 #endif
 			return;
 		}
@@ -2150,18 +2124,6 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u64 phys_addr = __pa(per_cpu(vmxarea, cpu));
 
-//#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG && POPHYPE_MIGRATE_VERBOSE_DEBUG
-#if defined(CONFIG_POPCORN_HYPE) && POPCORN_DEBUG_FT // killme replace me with the above one
-	static unsigned long cnt = 0;
-	// many nonstop
-	//if (cnt > 67289) {
-	cnt++;
-	if (!(cnt % 10000)) {
-		SIGVPRINTK("%s(): [LOAD] Jack vcpu %d vcpu->cpu %d cpu %d #%lu\n",
-				__func__, vcpu->vcpu_id, vcpu->cpu, cpu, cnt);
-	}
-#endif
-
 	if (!vmm_exclusive)
 		kvm_cpu_vmxon(phys_addr);
 	else if (vmx->loaded_vmcs->cpu != cpu)
@@ -2202,19 +2164,6 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
 		vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
 
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG && POPHYPE_MIGRATE_VERBOSE_DEBUG
-		{
-			static unsigned long vmx_switch_cnt = 0;
-			PHMIGRATEVPRINTK("------- %s(): <%d>'s vmcs vmx->loaded_vmcs %p "
-							"set host cpu from %d to %d #%d\n",
-							__func__, vcpu->vcpu_id, vmx->loaded_vmcs,
-							vmx->loaded_vmcs->cpu, cpu, vmx_switch_cnt);
-			if (!(vmx_switch_cnt++ % 100)) {
-				dump_stack(); /* turn on to debug why this happens in default */
-			}
-		}
-#endif
-
 		vmx->loaded_vmcs->cpu = cpu;
 	}
 
@@ -2243,17 +2192,6 @@ static void vmx_vcpu_pi_put(struct kvm_vcpu *vcpu)
 
 static void vmx_vcpu_put(struct kvm_vcpu *vcpu)
 {
-//#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG && POPHYPE_MIGRATE_VERBOSE_DEBUG
-#if defined(CONFIG_POPCORN_HYPE) && POPCORN_DEBUG_FT // killme replace me with the above one
-	static unsigned long cnt = 0;
-	// many nonstop
-	//if (cnt > 67289) {
-	cnt++;
-	if (!(cnt % 10000)) {
-		SIGVPRINTK("%s(): [PUT] Jack vcpu %d vcpu->cpu %d #%lu\n",
-				__func__, vcpu->vcpu_id, vcpu->cpu, cnt);
-	}
-#endif
 	vmx_vcpu_pi_put(vcpu);
 
 	__vmx_load_host_state(to_vmx(vcpu));
@@ -2502,9 +2440,6 @@ static void vmx_set_msr_bitmap(struct kvm_vcpu *vcpu)
 static void setup_msrs(struct vcpu_vmx *vmx)
 {
 	int save_nmsrs, index;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_X86_64)
-	PHMSRPRINTK("%s(): <%d>\n", __func__, vmx->vcpu.vcpu_id);
-#endif
 
 	save_nmsrs = 0;
 #ifdef CONFIG_X86_64
@@ -2933,38 +2868,6 @@ static int vmx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 {
 	struct shared_msr_entry *msr;
 
-
-#if 0 /* x86 is wrong. the real cllee is here */
-/*
-    static u32 msrs_to_save[] = {
-    MSR_IA32_SYSENTER_CS, MSR_IA32_SYSENTER_ESP, MSR_IA32_SYSENTER_EIP,
-    MSR_STAR,
-#ifdef CONFIG_X86_64
-    MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_SYSCALL_MASK, MSR_LSTAR,
-#endif
-    MSR_IA32_TSC, MSR_IA32_CR_PAT, MSR_VM_HSAVE_PA,
-    MSR_IA32_FEATURE_CONTROL, MSR_IA32_BNDCFGS, MSR_TSC_AUX,
-};
-*/
-    pophype_msrs.entries[n++].index = MSR_IA32_APICBASE; // no
-    pophype_msrs.entries[n++].index = MSR_IA32_SYSENTER_CS;
-    pophype_msrs.entries[n++].index = MSR_IA32_SYSENTER_ESP;
-    pophype_msrs.entries[n++].index = MSR_IA32_SYSENTER_EIP;
-    pophype_msrs.entries[n++].index = MSR_IA32_CR_PAT; // no get !!!!!!!!!!watch
-    pophype_msrs.entries[n++].index = MSR_IA32_MISC_ENABLE; // no
-    pophype_msrs.entries[n++].index = MSR_IA32_TSC;
-    pophype_msrs.entries[n++].index = MSR_CSTAR;
-    pophype_msrs.entries[n++].index = MSR_STAR;
-    pophype_msrs.entries[n++].index = MSR_EFER; // no (kvm_get_msr_common in arch/x86/kvm/x86.c)
-    pophype_msrs.entries[n++].index = MSR_LSTAR;
-    pophype_msrs.entries[n++].index = MSR_GS_BASE; // no (set)
-    pophype_msrs.entries[n++].index = MSR_FS_BASE; // no (set)
-    pophype_msrs.entries[n++].index = MSR_KERNEL_GS_BASE;
-    //pophype_msrs[n++].index = MSR_IA32_FEATURE_CONTROL;
-    pophype_msrs.nmsrs = n;
-
-#endif
-
 	PHMIGRATEPRINTK("\t\t\t<%d> %s(): msr_info->index %x\n",
 			vcpu->vcpu_id, __func__, msr_info->index);
 
@@ -3106,7 +3009,6 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 #ifdef CONFIG_POPCORN_HYPE
 		PHAPICPRINTK("[migration] MSR_IA32_SYSENTER_ESP "
 				"vmcs_writel val %llx (guest esp)\n", data);
-		//WARN_ON(1);
 #endif
 		vmcs_writel(GUEST_SYSENTER_ESP, data);
 		break;
@@ -3299,16 +3201,6 @@ static void vmclear_local_loaded_vmcss(void)
 {
 	int cpu = raw_smp_processor_id();
 	struct loaded_vmcs *v, *n;
-
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
-	/* Boottime init for each host cpu */
-	//static int cnt = 0;
-	//PHMIGRATEPRINTK("--- %s() ---\n", __func__);
-	//if ((cnt++ % 100) == 0) {
-	//	dump_stack(); /* turn on to debug why this happens in default */
-	//}
-	//PHMIGRATEPRINTK("%s(): ------ %d\n", __func__, cnt);
-#endif
 
 	list_for_each_entry_safe(v, n, &per_cpu(loaded_vmcss_on_cpu, cpu),
 				 loaded_vmcss_on_cpu_link)
@@ -4015,14 +3907,6 @@ static void vmx_set_cr3(struct kvm_vcpu *vcpu, unsigned long cr3)
 	unsigned long guest_cr3;
 	u64 eptp;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static int first_cr3[4] = {0, 0, 0, 0}; /* TODO MAX_VCPU*/
-	if (first_cr3[vcpu->vcpu_id < 10]) { /* final check beore vm entry */
-		first_cr3[vcpu->vcpu_id]++;
-		PHMIGRATEPRINTK("%s(): <%d> vmcs_write64 nice!!! Never happened\n",
-									__func__, vcpu->vcpu_id);
-	}
-#endif
 	guest_cr3 = cr3;
 	if (enable_ept) {
 		eptp = construct_eptp(cr3);
@@ -4191,10 +4075,6 @@ static void vmx_set_segment(struct kvm_vcpu *vcpu,
 	vmcs_write32(sf->limit, var->limit);
 	vmcs_write16(sf->selector, var->selector);
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	printk("enable_unrestricted_guest %d && (seg != VCPU_SREG_LDTR) %d\n",
-			enable_unrestricted_guest, seg != VCPU_SREG_LDTR);
-#endif
 	/*
 	 *   Fix the "Accessed" bit in AR field of segment registers for older
 	 * qemu binaries.
@@ -4207,25 +4087,10 @@ static void vmx_set_segment(struct kvm_vcpu *vcpu,
 	 * kvm hack.
 	 */
 	if (enable_unrestricted_guest && (seg != VCPU_SREG_LDTR)) {
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-		printk("<%d> %s(): seg = %d var->type %x |= 0x1 "
-				"(es=0, cs, ss, ds, fs, gs, tr, ldtr)\n",
-				vcpu->vcpu_id, __func__, seg, var->type);
-		/*
-    VCPU_SREG_ES=0, // !!!!
-    VCPU_SREG_CS,
-    VCPU_SREG_SS,
-    VCPU_SREG_DS=3, //!!!!
-    VCPU_SREG_FS,
-    VCPU_SREG_GS=5, // !!!!!
-    VCPU_SREG_TR,
-    VCPU_SREG_LDTR,
-		*/
-
-#endif
 		var->type |= 0x1; /* Accessed */
 #if defined(CONFIG_POPCORN_HYPE) && HACK_GUEST_DS_ES_GS_AT_ORIGIN
-		{ int hack = 0; /* type: 0 => 1 */
+		{
+			int hack = 0; /* type: 0 => 1 */
 			if (seg == VCPU_SREG_DS && var->type == 0x1)
 				hack = 1;
 			else if (seg == VCPU_SREG_ES && var->type == 0x1)
@@ -4234,10 +4099,10 @@ static void vmx_set_segment(struct kvm_vcpu *vcpu,
 				hack = 1;
 			if (hack) {
 				printk("<%d> %s(): pophype HACK HACK HACK (DOESN'T WORK) "
-						"- the right way is 1. to find who set .type = 0"
-						" 2. if that one is before here, maybe this hack may work."
-						" Otherwise this hack is very dangerous\n",
-											vcpu->vcpu_id, __func__);
+					"- the right way is 1. to find who set .type = 0"
+					" 2. if that one is before here, maybe this hack may work."
+					" Otherwise this hack is very dangerous\n",
+										vcpu->vcpu_id, __func__);
 				var->type = 0;
 			}
 		}
@@ -4287,8 +4152,6 @@ static bool rmode_segment_valid(struct kvm_vcpu *vcpu, int seg)
 	struct kvm_segment var;
 	u32 ar;
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-#endif
 	vmx_get_segment(vcpu, &var, seg);
 	var.dpl = 0x3;
 	if (seg == VCPU_SREG_CS)
@@ -4374,7 +4237,7 @@ static bool data_segment_valid(struct kvm_vcpu *vcpu, int seg)
 			return false;
 	}
 
-	/* TODO: Add other members to kvm_segment_field to allow checking for other access
+	/* Add other members to kvm_segment_field to allow checking for other access
 	 * rights flags
 	 */
 	return true;
@@ -4390,7 +4253,7 @@ static bool tr_valid(struct kvm_vcpu *vcpu)
 		return false;
 	if (tr.selector & SEGMENT_TI_MASK)	/* TI = 1 */
 		return false;
-	if (tr.type != 3 && tr.type != 11) /* TODO: Check if guest is in IA32e mode */
+	if (tr.type != 3 && tr.type != 11) /* Check if guest is in IA32e mode */
 		return false;
 	if (!tr.present)
 		return false;
@@ -4472,10 +4335,6 @@ static bool guest_state_valid(struct kvm_vcpu *vcpu)
 		if (!ldtr_valid(vcpu))
 			return false;
 	}
-	/* TODO:
-	 * - Add checks on RIP
-	 * - Add checks on RFLAGS
-	 */
 
 	return true;
 }
@@ -4485,49 +4344,29 @@ static int init_rmode_tss(struct kvm *kvm)
 	gfn_t fn;
 	u16 data = 0;
 	int idx, r;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	int ret = 0;
-	HPPRINTK("%s: remote TSS has its own TSS vma region now\n", __func__);
-#endif
 
 	idx = srcu_read_lock(&kvm->srcu);
 	fn = kvm->arch.tss_addr >> PAGE_SHIFT;
 	r = kvm_clear_guest_page(kvm, fn, 0, PAGE_SIZE);
 	if (r < 0)
 		goto out;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	ret++;
-#endif
 	data = TSS_BASE_SIZE + TSS_REDIRECTION_SIZE;
 	r = kvm_write_guest_page(kvm, fn++, &data,
 			TSS_IOPB_BASE_OFFSET, sizeof(u16));
 	if (r < 0)
 		goto out;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	ret++;
-#endif
 	r = kvm_clear_guest_page(kvm, fn++, 0, PAGE_SIZE);
 	if (r < 0)
 		goto out;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	ret++;
-#endif
 	r = kvm_clear_guest_page(kvm, fn, 0, PAGE_SIZE);
 	if (r < 0)
 		goto out;
 	data = ~0;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	ret++;
-#endif
 	r = kvm_write_guest_page(kvm, fn, &data,
 				 RMODE_TSS_SIZE - 2 * PAGE_SIZE - 1,
 				 sizeof(u8));
 out:
 	srcu_read_unlock(&kvm->srcu, idx);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	if (r < 0)
-		HPPRINTK("\t%s(): r %d ret %d\n", __func__, r , ret);
-#endif
 	return r;
 }
 
@@ -4603,11 +4442,6 @@ static int alloc_apic_access_page(struct kvm *kvm)
 	if (r)
 		goto out;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	printk("[%d] %s(): apic page gpa 0x%x\n",
-				current->pid, __func__, APIC_DEFAULT_PHYS_BASE);
-	//BUG_ON("gfn_to_page() is a write fault"); /* pophype - happens once */
-#endif
 	page = gfn_to_page(kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
 	if (is_error_page(page)) {
 		r = -EFAULT;
@@ -4921,16 +4755,6 @@ static void vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	int r;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-#if HYPE_PERF_CRITICAL_DEBUG
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT || !(cnt % 5000)) // lmany
-		printk("\t APIC_DM_FIXED -> %s(): vcpu %d vec 0x%x #%lu\n",
-								__func__, vcpu->vcpu_id, vector, cnt);
-#endif
-#endif
-
 	r = vmx_deliver_nested_posted_interrupt(vcpu, vector);
 	if (!r)
 		return;
@@ -4971,10 +4795,6 @@ static void vmx_set_constant_host_state(struct vcpu_vmx *vmx)
 	unsigned long tmpl;
 	struct desc_ptr dt;
 	unsigned long cr4;
-
-#if defined(CONFIG_POPCORN_HYPE)
-	POP_PK("%s(): \n", __func__);
-#endif
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);  /* 22.2.3 */
 	vmcs_writel(HOST_CR3, read_cr3());  /* 22.2.3  FIXME: shadow tables */
@@ -5061,9 +4881,7 @@ static u32 vmx_exec_control(struct vcpu_vmx *vmx)
 static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 {
 	u32 exec_control = vmcs_config.cpu_based_2nd_exec_ctrl;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	PHMIGRATEPRINTK("%s(): Jack vmx %p\n", __func__, vmx);
-#endif
+
 	if (!cpu_need_virtualize_apic_accesses(&vmx->vcpu))
 		exec_control &= ~SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES;
 	if (vmx->vpid == 0)
@@ -5100,11 +4918,6 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 
 static void ept_set_mmio_spte_mask(void)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	/* arch/x86/kvm/vmx.c */
-    POP_PK("%s: WE ARE [[[[[[EPT enabled]]]]] 110b mmio\n", __func__);
-	//WARN_ON(1);
-#endif
 	/*
 	 * EPT Misconfigurations can be generated if the value of bits 2:0
 	 * of an EPT paging-structure entry is 110b (write/execute).
@@ -5124,11 +4937,6 @@ static int vmx_vcpu_setup(struct vcpu_vmx *vmx)
 	unsigned long a;
 #endif
 	int i;
-#if defined(CONFIG_POPCORN_HYPE)
-	PHMIGRATEPRINTK("%s(): Jack vcpu %d host vcpu %d many vmcs_write done "
-					"(no preload...maybe I destory?) start\n",
-					__func__, vmx->vcpu.vcpu_id, vmx->vcpu.cpu);
-#endif
 
 	/* I/O */
 	vmcs_write64(IO_BITMAP_A, __pa(vmx_io_bitmap_a));
@@ -5228,11 +5036,6 @@ static int vmx_vcpu_setup(struct vcpu_vmx *vmx)
 		vmcs_write64(PML_ADDRESS, page_to_phys(vmx->pml_pg));
 		vmcs_write16(GUEST_PML_INDEX, PML_ENTITY_NUM - 1);
 	}
-#if defined(CONFIG_POPCORN_HYPE)
-	PHMIGRATEPRINTK("%s(): Jack vcpu %d host vcpu %d many vmcs_write done "
-					"(no preload...maybe I destory?) end\n",
-					__func__, vmx->vcpu.vcpu_id, vmx->vcpu.cpu);
-#endif
 
 	return 0;
 }
@@ -5242,11 +5045,6 @@ static void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct msr_data apic_base_msr;
 	u64 cr0;
-
-#if defined(CONFIG_POPCORN_HYPE)
-	POP_PK("%s(): Jack vcpu %d host vcpu %d\n",
-				__func__, vcpu->vcpu_id, vcpu->cpu);
-#endif
 
 	vmx->rmode.vm86_active = 0;
 
@@ -5499,15 +5297,8 @@ static int vmx_set_tss_addr(struct kvm *kvm, unsigned int addr)
 {
 	int ret;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-    DDPRINTK("%s: 3\n", __func__);
-#endif
 	ret = x86_set_memory_region(kvm, TSS_PRIVATE_MEMSLOT, addr,
 				    PAGE_SIZE * 3);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-    DDPRINTK("%s: 4\n", __func__);
-	BUG_ON(ret); /* This happens sometimes.... (e.g. msg_layer not on) */
-#endif
 	if (ret)
 		return ret;
 	kvm->arch.tss_addr = addr;
@@ -5607,58 +5398,23 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 	u32 vect_info;
 	enum emulation_result er;
 
-#if HYPE_PERF_CRITICAL_DEBUG
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	/* pophype TODO: I might have to redirect this. From VM_EXIT */
-	static unsigned long handle_except_cnt = 0;
-	if (distributed_process(current)) {
-		handle_except_cnt++;
-		printk(" $$[%d] from <%d> %s(): #%lu\n",
-				current->pid, vcpu->vcpu_id, __func__, handle_except_cnt);
-	}
-#endif
-#endif
-
 	vect_info = vmx->idt_vectoring_info;
 	intr_info = vmx->exit_intr_info;
 
 	if (is_machine_check(intr_info)) {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		if (distributed_process(current))
-			printk("\t $$[%d] <%d> %s(): machine check handled by vcpu_run()\n",
-						current->pid, vcpu->vcpu_id, __func__);
-#endif
 		return handle_machine_check(vcpu);
 	}
 
 	if (is_nmi(intr_info)) {
-#if HYPE_PERF_CRITICAL_DEBUG
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		if (distributed_process(current))
-			printk("\t $$[%d] <%d> %s(): nmi handled by vmx_vcpu_run()\n",
-					current->pid, vcpu->vcpu_id, __func__);
-#endif
-#endif
 		return 1;  /* already handled by vmx_vcpu_run() */
 	}
 
 	if (is_no_device(intr_info)) {
 		vmx_fpu_activate(vcpu);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		//if (distributed_process(current))
-		//	printk("\t $$[%d] <%d> %s(): no dev\n",
-		//			current->pid, vcpu->vcpu_id, __func__);
-#endif
 		return 1;
 	}
 
 	if (is_invalid_opcode(intr_info)) {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		if (distributed_process(current))
-			printk("\t $$[%d] <%d> %s(): inv op\n",
-					current->pid, vcpu->vcpu_id, __func__);
-#endif
-
 		if (is_guest_mode(vcpu)) {
 			kvm_queue_exception(vcpu, UD_VECTOR);
 			return 1;
@@ -5682,14 +5438,6 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 	 */
 	if ((vect_info & VECTORING_INFO_VALID_MASK) &&
 	    !(is_page_fault(intr_info) && !(error_code & PFERR_RSVD_MASK))) {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		printk("What makes 17?? simul_ev %s %s %s\n",
-					(vect_info & VECTORING_INFO_VALID_MASK)?"O":"X",
-					(is_page_fault(intr_info))?"O":"X",
-					(error_code & PFERR_RSVD_MASK)?"O":"X");
-		printk("vect_info %u intr_info %u\n",
-							vect_info, intr_info);
-#endif
 		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
 		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_SIMUL_EX;
 		vcpu->run->internal.ndata = 3;
@@ -5708,26 +5456,10 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 		if (kvm_event_needs_reinjection(vcpu))
 			kvm_mmu_unprotect_page_virt(vcpu, cr2);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		if (distributed_process(current)) {
-			printk("\t @@ [%d] <%d> @@ from %s\n",
-					current->pid, vcpu->vcpu_id, __func__);
-		}
-#endif
 		return kvm_mmu_page_fault(vcpu, cr2, error_code, NULL, 0, 1, 1);
 	}
 
 	ex_no = intr_info & INTR_INFO_VECTOR_MASK;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	if (distributed_process(current)) {
-		static unsigned long handle_except_cnt2 = 0;
-		handle_except_cnt2++;
-		printk(" $$[%d] <%d> %s(): vect_info %x intr_info %x ex_no %x #%lu\n",
-				current->pid, vcpu->vcpu_id, __func__,
-				vect_info, intr_info, ex_no, handle_except_cnt2);
-	}
-#endif
 
 	if (vmx->rmode.vm86_active && rmode_exception(vcpu, ex_no))
 		return handle_rmode_exception(vcpu, ex_no, error_code);
@@ -5775,15 +5507,6 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 
 static int handle_external_interrupt(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt > (VM_SINGLE_HANDLE_DISPLAY_CNT + 10) &&
-			cnt < (VM_SINGLE_HANDLE_DISPLAY_CNT + 11)) {
-		VMPRINTK("\t\t|| %s(): <%d> check if handler works #%lu\n",
-								__func__, vcpu->vcpu_id, cnt);
-	}
-#endif
 	++vcpu->stat.irq_exits;
 	return 1;
 }
@@ -5799,28 +5522,6 @@ static int handle_io(struct kvm_vcpu *vcpu)
 	unsigned long exit_qualification;
 	int size, in, string;
 	unsigned port;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	static unsigned long cnt1 = 0;
-	if (!vcpu->vcpu_id) {
-		cnt++;
-		if (cnt > 0 && cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-			//|| !(cnt % VM_SINGLE_HANDLE_DISPLAY_CNT)) {
-		//if (cnt > 2600 && cnt < 2700)
-			VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-		}
-	} else if (vcpu->vcpu_id) {
-		cnt1++;
-		//if (cnt1 < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		//if (cnt1 > 100000 || (cnt1 > 50000 && !(cnt1 % 10000))) {
-		if ( cnt1 < VM_SINGLE_HANDLE_DISPLAY_CNT || !(cnt1 % 10000)) {
-			/* happens all the time */
-			CRITICALIOPK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt1);
-			//VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt1);
-		}
-	}
-#endif
 
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	string = (exit_qualification & 16) != 0;
@@ -5934,28 +5635,12 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 	int reg;
 	int err;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	static unsigned long cr_cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-#endif
-
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	cr = exit_qualification & 15;
 	reg = (exit_qualification >> 8) & 15;
 	switch ((exit_qualification >> 4) & 3) {
 	case 0: /* mov to cr */
 		val = kvm_register_readl(vcpu, reg);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		cr_cnt++;
-		if (cr_cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-			VMPRINTK("\t\t|| %s(): <%d> val %lx #%lu\n", __func__,
-									vcpu->vcpu_id, cr_cnt, val);
-		}
-#endif
 		trace_kvm_cr_write(cr, val);
 		switch (cr) {
 		case 0:
@@ -6026,13 +5711,6 @@ static int handle_dr(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qualification;
 	int dr, dr7, reg;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	dr = exit_qualification & DEBUG_REG_ACCESS_NUM;
@@ -6131,23 +5809,6 @@ static void vmx_set_dr7(struct kvm_vcpu *vcpu, unsigned long val)
 
 static int handle_cpuid(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	static unsigned long cnt1 = 0;
-	if (!vcpu->vcpu_id) {
-	cnt++;
-	if (cnt > 0 && cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-	//if (cnt > 2200 && cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-
-	if (vcpu->vcpu_id) {
-		cnt1++;
-		if (cnt1 < VM_SINGLE_HANDLE_DISPLAY_CNT)
-			VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt1);
-	}
-#endif
-
 	kvm_emulate_cpuid(vcpu);
 	return 1;
 }
@@ -6156,14 +5817,6 @@ static int handle_rdmsr(struct kvm_vcpu *vcpu)
 {
 	u32 ecx = vcpu->arch.regs[VCPU_REGS_RCX];
 	struct msr_data msr_info;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-#endif
 
 	msr_info.index = ecx;
 	msr_info.host_initiated = false;
@@ -6189,20 +5842,6 @@ static int handle_wrmsr(struct kvm_vcpu *vcpu)
 	u64 data = (vcpu->arch.regs[VCPU_REGS_RAX] & -1u)
 		| ((u64)(vcpu->arch.regs[VCPU_REGS_RDX] & -1u) << 32);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		/* this is the 2nd thing AP does */
-		WRMSRPRINTK("\t\t|| %s(): <%d> ecx(reg) 0x%x data 0x%llx  #%lu\n",
-							__func__, vcpu->vcpu_id, ecx, data, cnt);
-		if (ecx >> (2 * sizeof(char)) == 0x4b564d) { // == 0x4b564dxx
-			printk ("\t\t\tlapid seting\n");
-		}
-	}
-	/* TODO: I might have to redirect this */
-#endif
-
 	msr.data = data;
 	msr.index = ecx;
 	msr.host_initiated = false;
@@ -6219,13 +5858,6 @@ static int handle_wrmsr(struct kvm_vcpu *vcpu)
 
 static int handle_tpr_below_threshold(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-#endif
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
 	return 1;
 }
@@ -6233,18 +5865,6 @@ static int handle_tpr_below_threshold(struct kvm_vcpu *vcpu)
 static int handle_interrupt_window(struct kvm_vcpu *vcpu)
 {
 	u32 cpu_based_vm_exec_control;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	if (distributed_process(current)) {
-		cnt++;
-		if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-			/* Not many but anytime */
-			CRITICALALLPK("\t\t|| %s(): <%d> #%lu\n",
-						__func__, vcpu->vcpu_id, cnt);
-		}
-	}
-#endif
 
 	/* clear pending irq */
 	cpu_based_vm_exec_control = vmcs_read32(CPU_BASED_VM_EXEC_CONTROL);
@@ -6259,24 +5879,11 @@ static int handle_interrupt_window(struct kvm_vcpu *vcpu)
 
 static int handle_halt(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < 50)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	return kvm_emulate_halt(vcpu);
 }
 
 static int handle_vmcall(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		PHMIGRATEPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-#endif
 #if defined(CONFIG_POPCORN_HYPE)
 	return kvm_emulate_hypercall(vcpu);
 #else
@@ -6287,24 +5894,12 @@ static int handle_vmcall(struct kvm_vcpu *vcpu)
 
 static int handle_invd(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	return emulate_instruction(vcpu, 0) == EMULATE_DONE;
 }
 
 static int handle_invlpg(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	kvm_mmu_invlpg(vcpu, exit_qualification);
 	skip_emulated_instruction(vcpu);
@@ -6314,12 +5909,6 @@ static int handle_invlpg(struct kvm_vcpu *vcpu)
 static int handle_rdpmc(struct kvm_vcpu *vcpu)
 {
 	int err;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	err = kvm_rdpmc(vcpu);
 	kvm_complete_insn_gp(vcpu, err);
@@ -6329,17 +5918,6 @@ static int handle_rdpmc(struct kvm_vcpu *vcpu)
 
 static int handle_wbinvd(struct kvm_vcpu *vcpu)
 {
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		VMPRINTK("\t\t|| %s(): <%d> #%lu \"CLEAR CACHE\" "
-				"EXIT_REASON_WBINVD %d is the first vmx->exit "
-				"BUT NEVENR COME TO HERE\n",
-				__func__, vcpu->vcpu_id, cnt, EXIT_REASON_WBINVD);
-	}
-#endif
 	kvm_emulate_wbinvd(vcpu);
 	return 1;
 }
@@ -6348,13 +5926,6 @@ static int handle_xsetbv(struct kvm_vcpu *vcpu)
 {
 	u64 new_bv = kvm_read_edx_eax(vcpu);
 	u32 index = kvm_register_read(vcpu, VCPU_REGS_RCX);
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	if (kvm_set_xcr(vcpu, index, new_bv) == 0)
 		skip_emulated_instruction(vcpu);
@@ -6377,12 +5948,6 @@ static int handle_xrstors(struct kvm_vcpu *vcpu)
 
 static int handle_apic_access(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	if (likely(fasteoi)) {
 		unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 		int access_type, offset;
@@ -6409,13 +5974,6 @@ static int handle_apic_eoi_induced(struct kvm_vcpu *vcpu)
 	unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	int vector = exit_qualification & 0xff;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
-
 	/* EOI-induced VM exit is trap-like and thus no need to adjust IP */
 	kvm_apic_set_eoi_accelerated(vcpu, vector);
 	return 1;
@@ -6425,22 +5983,6 @@ static int handle_apic_write(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	u32 offset = exit_qualification & 0xfff;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT) && HYPEBOOTDEBUG
-	/* TODO distributed_process(current) */
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-		/* 0x300 == ICR */
-		printk("\t\t|| %s(): <%d> offset(reg) 0x%x #%lu\n",
-				__func__, vcpu->vcpu_id, offset, cnt);
-		if (offset == APIC_DFR) { // == reg=APIC_DFR == recalculate_apic_map
-			printk("\t\t\t=>recalculate_apic_map()\n");
-		}
-	}
-#ifdef CONFIG_POPCORN_CHECK_SANITY
-	BUG_ON(in_atomic());
-#endif
-#endif
 
 	/* APIC-write VM exit is trap-like and thus no need to adjust IP */
 	kvm_apic_write_nodecode(vcpu, offset);
@@ -6455,14 +5997,6 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 	u32 error_code = 0;
 	u16 tss_selector;
 	int reason, type, idt_v, idt_index;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	//static unsigned long cnt = 0;
-	//cnt++;
-	//if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-	//	printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	printk("\t\t|| %s(): <%d>\n", __func__, vcpu->vcpu_id);
-#endif
 
 	idt_v = (vmx->idt_vectoring_info & VECTORING_INFO_VALID_MASK);
 	idt_index = (vmx->idt_vectoring_info & VECTORING_INFO_VECTOR_MASK);
@@ -6526,9 +6060,6 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	gpa_t gpa, gla = -1;
 	u32 error_code;
 	int gla_validity;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-#endif
 
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 
@@ -6557,25 +6088,9 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 		vmcs_set_bits(GUEST_INTERRUPTIBILITY_INFO, GUEST_INTR_STATE_NMI);
 
 	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
-	/* AB: */
-	//trace_kvm_page_fault(gpa, exit_qualification);
 	if (gla_validity & 0x1)
-		gla = vmcs_readl(GUEST_LINEAR_ADDRESS); // check Table 27-7 Intel manual
-	//trace_kvm_page_fault_ext(kvm_rip_read(vcpu), gpa, gla, exit_qualification);
+		gla = vmcs_readl(GUEST_LINEAR_ADDRESS);
 	trace_kvm_page_fault_ext(kvm_get_linear_rip(vcpu), gpa, gla, exit_qualification);
-	/*
-	#define PFERR_PRESENT_BIT 0
-	#define PFERR_WRITE_BIT 1
-	#define PFERR_USER_BIT 2
-	#define PFERR_RSVD_BIT 3
-	#define PFERR_FETCH_BIT 4
-
-	#define PFERR_PRESENT_MASK (1U << PFERR_PRESENT_BIT)
-	#define PFERR_WRITE_MASK (1U << PFERR_WRITE_BIT)
-	#define PFERR_USER_MASK (1U << PFERR_USER_BIT)
-	#define PFERR_RSVD_MASK (1U << PFERR_RSVD_BIT) // MMIO fault
-	#define PFERR_FETCH_MASK (1U << PFERR_FETCH_BIT)
-	*/
 
 	/* It is a write fault? */
 	error_code = exit_qualification & PFERR_WRITE_MASK;
@@ -6586,20 +6101,6 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 
 	vcpu->arch.exit_qualification = exit_qualification;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	if (distributed_process(current))
-		cnt++;
-
-	if ((distributed_process(current) && cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		// || (INTERESTED_GVA_MASK(gpa) == 0x1c75)
-		/* memcached - rarely happens */
-		) {
-		/* 1st thing BSP */
-		VMPRINTK("\t|| %s(): <%d> %llx #%lu/%d\n",
-			__func__, vcpu->vcpu_id, gpa, cnt, VM_SINGLE_HANDLE_DISPLAY_CNT);
-	}
-#endif
-
 	return kvm_mmu_page_fault(vcpu, gpa, error_code, NULL, 0, gla, exit_qualification);
 }
 
@@ -6608,40 +6109,14 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 	int ret;
 	gpa_t gpa;
 
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
-	static unsigned long cnt = 0;
-	cnt++;
-	//if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-	if (distributed_process(current) && cnt > 0) {
-		MMIOPK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-	/* TODO: I might not init here properly!!! */
-#endif
-
 	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
 	if (!kvm_io_bus_write(vcpu, KVM_FAST_MMIO_BUS, gpa, 0, NULL)) {
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
-		printk("<%d> %s(): done by 0x%llu\n", vcpu->vcpu_id, __func__, gpa);
-#endif
 		skip_emulated_instruction(vcpu);
 		trace_kvm_fast_mmio(gpa);
 		return 1;
 	}
 
 	ret = handle_mmio_page_fault(vcpu, gpa, true);
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
-	MMIOPK("\t\t\t$$[%d] <%d> %s(): ret %d (see who fix it)\n",
-				current->pid, vcpu->vcpu_id, __func__, ret);
-	if (vcpu->vcpu_id == 1) {
-		printk("vcpu 1 mmio exit_reson %u %u %u(2) %llu vmx %llu\n",
-						vcpu->run->exit_reason,
-						vcpu->run->internal.suberror,
-						vcpu->run->internal.ndata,
-						vcpu->run->internal.data[0],
-						vcpu->run->internal.data[1]);
-		//dump_stack();
-	}
-#endif
 	if (likely(ret == RET_MMIO_PF_EMULATE))
 		return x86_emulate_instruction(vcpu, gpa, 0, NULL, 0) ==
 					      EMULATE_DONE;
@@ -6664,13 +6139,6 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 static int handle_nmi_window(struct kvm_vcpu *vcpu)
 {
 	u32 cpu_based_vm_exec_control;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	/* clear pending NMI */
 	cpu_based_vm_exec_control = vmcs_read32(CPU_BASED_VM_EXEC_CONTROL);
@@ -6831,10 +6299,6 @@ static __init int hardware_setup(void)
 {
 	int r = -ENOMEM, i, msr;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	printk("%s %s(): (O) both nodes init HW vmx (ept...)\n",
-										__FILE__, __func__);
-#endif
 	rdmsrl_safe(MSR_EFER, &host_efer);
 
 	for (i = 0; i < ARRAY_SIZE(vmx_msr_index); ++i)
@@ -6914,9 +6378,6 @@ static __init int hardware_setup(void)
 	    !cpu_has_vmx_ept_4levels()) {
 		enable_ept = 0;
 		enable_unrestricted_guest = 0;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		printk("[ept]: [DISABLE] accessed and dirty flags for EPT\n");
-#endif
 		enable_ept_ad_bits = 0;
 	}
 
@@ -6935,18 +6396,8 @@ static __init int hardware_setup(void)
 		enable_ept_ad_bits = 0;
 #endif
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	printk("%s(): Jack cpu_has_vmx_unrestricted_guest() %d enable_ept %d "
-			"enable_unrestricted_guest %d\n",
-			__func__, cpu_has_vmx_unrestricted_guest(), enable_ept,
-			enable_unrestricted_guest);
-#endif
 	if (!cpu_has_vmx_unrestricted_guest())
 		enable_unrestricted_guest = 0;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	printk("%s(): Jack enable_unrestricted_guest %d\n",
-					__func__, enable_unrestricted_guest);
-#endif
 
 	if (!cpu_has_vmx_flexpriority())
 		flexpriority_enabled = 0;
@@ -7097,13 +6548,6 @@ static __exit void hardware_unsetup(void)
  */
 static int handle_pause(struct kvm_vcpu *vcpu)
 {
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		VMPRINTK("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	if (ple_gap)
 		grow_ple_window(vcpu);
 
@@ -7121,13 +6565,6 @@ static int handle_nop(struct kvm_vcpu *vcpu)
 
 static int handle_mwait(struct kvm_vcpu *vcpu)
 {
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	printk_once(KERN_WARNING "kvm: MWAIT instruction emulated as NOP!\n");
 	return handle_nop(vcpu);
 }
@@ -7505,13 +6942,6 @@ static int handle_vmon(struct kvm_vcpu *vcpu)
 	const u64 VMXON_NEEDED_FEATURES = FEATURE_CONTROL_LOCKED
 		| FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
-
 	/* The Intel VMX Instruction Reference lists a bunch of bits that
 	 * are prerequisite to running VMXON, most notably cr4.VMXE must be
 	 * set to 1 (see vmx_set_cr4() for when we allow the guest to set this).
@@ -7666,12 +7096,6 @@ static void free_nested(struct vcpu_vmx *vmx)
 /* Emulate the VMXOFF instruction */
 static int handle_vmoff(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	if (!nested_vmx_check_permission(vcpu))
 		return 1;
 	free_nested(to_vmx(vcpu));
@@ -7686,12 +7110,6 @@ static int handle_vmclear(struct kvm_vcpu *vcpu)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u32 zero = 0;
 	gpa_t vmptr;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	if (!nested_vmx_check_permission(vcpu))
 		return 1;
@@ -7718,25 +7136,12 @@ static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch);
 /* Emulate the VMLAUNCH instruction */
 static int handle_vmlaunch(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 	return nested_vmx_run(vcpu, true);
 }
 
 /* Emulate the VMRESUME instruction */
 static int handle_vmresume(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
-
 	return nested_vmx_run(vcpu, false);
 }
 
@@ -7933,12 +7338,6 @@ static int handle_vmread(struct kvm_vcpu *vcpu)
 	unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	u32 vmx_instruction_info = vmcs_read32(VMX_INSTRUCTION_INFO);
 	gva_t gva = 0;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	if (!nested_vmx_check_permission(vcpu) ||
 	    !nested_vmx_check_vmcs12(vcpu))
@@ -7990,13 +7389,6 @@ static int handle_vmwrite(struct kvm_vcpu *vcpu)
 	u64 field_value = 0;
 	struct x86_exception e;
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
-
 	if (!nested_vmx_check_permission(vcpu) ||
 	    !nested_vmx_check_vmcs12(vcpu))
 		return 1;
@@ -8040,12 +7432,6 @@ static int handle_vmptrld(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	gpa_t vmptr;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	if (!nested_vmx_check_permission(vcpu))
 		return 1;
@@ -8097,12 +7483,6 @@ static int handle_vmptrst(struct kvm_vcpu *vcpu)
 	u32 vmx_instruction_info = vmcs_read32(VMX_INSTRUCTION_INFO);
 	gva_t vmcs_gva;
 	struct x86_exception e;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	if (!nested_vmx_check_permission(vcpu))
 		return 1;
@@ -8134,10 +7514,6 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 	struct {
 		u64 eptp, gpa;
 	} operand;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-#endif
-
 
 	if (!(vmx->nested.nested_vmx_secondary_ctls_high &
 	      SECONDARY_EXEC_ENABLE_EPT) ||
@@ -8178,17 +7554,6 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	/* good */
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> gva %lx inv cached EPT "
-				"maapings in the processor "
-				"to synchronize address translation in VM "
-					"with memory-resident EPT pages. #%lu\n",
-								__func__, vcpu->vcpu_id, gva, cnt);
-#endif
-
 	switch (type) {
 	case VMX_EPT_EXTENT_GLOBAL:
 		kvm_mmu_sync_roots(vcpu);
@@ -8213,15 +7578,6 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 	gva_t gva;
 	struct x86_exception e;
 	int vpid;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> inv cached mappings of "
-			"address translation based on the VPID #%lu\n",
-								__func__, vcpu->vcpu_id, cnt);
-#endif
 
 	if (!(vmx->nested.nested_vmx_secondary_ctls_high &
 	      SECONDARY_EXEC_ENABLE_VPID) ||
@@ -8287,13 +7643,6 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 static int handle_pml_full(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qualification;
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long cnt = 0;
-	cnt++;
-	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-		printk("\t\t|| %s(): <%d> #%lu\n", __func__, vcpu->vcpu_id, cnt);
-#endif
 
 	trace_kvm_pml_full(vcpu->vcpu_id);
 
@@ -8907,84 +8256,6 @@ static void dump_vmcs(void)
 #ifdef CONFIG_POPCORN_HYPE
 static void pophype_check_vmcs(struct kvm_vcpu *vcpu)
 {
-#if 0 //POPHYPE_MIGRATE_DEBUG
-	struct vcpu_vmx *vmx = to_vmx(vcpu);
-	PHMIGRATEPRINTK("\n-------- %s vmx info start <%d> smp_processor_id() %d -------\n",
-									__func__, vcpu->vcpu_id, smp_processor_id());
-	PHMIGRATEPRINTK("\t\t ------- vmx (in-kernel cache) -----\n");
-	PHMIGRATEPRINTK("TODO\n");
-
-
-	PHMIGRATEPRINTK("\t\t ------ vmx->loaded_vmcs ------\n");
-	PHMIGRATEPRINTK("\t vmx->loaded_vmcs %p ?= &vmx->vmcs01 %p\n",
-							vmx->loaded_vmcs, &vmx->vmcs01);
-	PHMIGRATEPRINTK("\t [vmx] vmx->vmcs01.cpu %d TODO\n", vmx->vmcs01.cpu);
-	PHMIGRATEPRINTK("\t [vmx] vmx->vmcs01.launched %d TODO (set when vm_exit?)\n", vmx->vmcs01.launched);
-	PHMIGRATEPRINTK("\t vmx->loaded_vmcs->cpu %d\n", vmx->loaded_vmcs->cpu);
-	PHMIGRATEPRINTK("\t vmx->loaded_vmcs->vmcs %p\n", vmx->loaded_vmcs->vmcs);
-	PHMIGRATEPRINTK("\t vmx->loaded_vmcs->launched %d\n", vmx->loaded_vmcs->launched);
-	PHMIGRATEPRINTK("\t [R] vmx->__launched %c\n", vmx->__launched ? 'O' : 'X');
-
-	/* vmx_vcpu_run */
-	PHMIGRATEPRINTK("[phmigrate] vmx->ple_window_dirty %u TODO vmx->ple_window %u\n",
-								vmx->ple_window_dirty, vmx->ple_window);
-	PHMIGRATEPRINTK("[phmigrate] vmx->host_state.vmcs_host_cr4 0x%lx same "
-			"(will be overwritten by using host cpu's cr4)\n", vmx->host_state.vmcs_host_cr4);
-	//vcpu->arch.regs[VCPU_REGS_RSP]
-	/* vmx_vcpu_run asm load */
-	PHMIGRATEPRINTK("[phmigrate] vmx->fail %u\n", vmx->fail);
-	PHMIGRATEPRINTK("[phmigrate] vmx->nested.sync_shadow_vmcs %u\n", vmx->nested.sync_shadow_vmcs);
-	PHMIGRATEPRINTK("[phmigrate] vmx->host_rsp 0x%lx TODO\n", vmx->host_rsp);
-
-
-
-	PHMIGRATEPRINTK("----0621----\n");
-	PHMIGRATEPRINTK("\t Jack vmx->idt_vectoring_info %d\n", vmx->idt_vectoring_info);
-	PHMIGRATEPRINTK("----0622----\n");
-	PHMIGRATEPRINTK("[ck][diff][efer] vmcs_readl(GUEST_IA32_EFER); %lx\n", vmcs_readl(GUEST_IA32_EFER));
-	PHMIGRATEPRINTK("----0622----\n");
-	PHMIGRATEPRINTK("<%d> %s(): vcpu->arch.mp_state %d (expect 0)\n",
-				vcpu->vcpu_id, __func__, vcpu->arch.mp_state);
-
-	//PHMIGRATEPRINTK("\t\t ---- checking now since different between nodes ---\n");
-	//PHMIGRATEPRINTK("%s(): kvm_lapic_enabled %d (!=)\n",
-	//			__func__, kvm_lapic_enabled(vcpu));     /// WRONG COMPILER
-
-
-	PHMIGRATEPRINTK("\n\n\n------ [diff !=!=!=!=!=!=!=!] VMCS  (check if in msg) ------\n");
-	PHMIGRATEPRINTK("InterruptStatus = %04x\n",
-		       vmcs_read16(GUEST_INTR_STATUS));
-
-	/* vmx_dump_sel */
-	vmx_dump_sel("DS:  ", GUEST_DS_SELECTOR);
-	vmx_dump_sel("ES:  ", GUEST_ES_SELECTOR);
-	vmx_dump_sel("GS:  ", GUEST_GS_SELECTOR);
-	vmx_dump_sel("LDTR:", GUEST_LDTR_SELECTOR);
-
-	PHMIGRATEPRINTK("VMEntry: intr_info=%08x errcode=%08x ilen=%08x\n",
-	       vmcs_read32(VM_ENTRY_INTR_INFO_FIELD),
-	       vmcs_read32(VM_ENTRY_EXCEPTION_ERROR_CODE),
-	       vmcs_read32(VM_ENTRY_INSTRUCTION_LEN));
-	PHMIGRATEPRINTK("VMExit: intr_info=%08x errcode=%08x ilen=%08x\n",
-	       vmcs_read32(VM_EXIT_INTR_INFO),
-	       vmcs_read32(VM_EXIT_INTR_ERROR_CODE),
-	       vmcs_read32(VM_EXIT_INSTRUCTION_LEN));
-	PHMIGRATEPRINTK("TSC Offset = 0x%016lx\n", vmcs_readl(TSC_OFFSET));
-	PHMIGRATEPRINTK("EPT pointer = 0x%016lx (cr3, eptp)\n", vmcs_readl(EPT_POINTER));
-	PHMIGRATEPRINTK("------ [diff !=!=!=!=!=!=!=!] VMCS  (check if in msg) end ------\n\n");
-/*
-[  573.292149] VMEntry: intr_info=00000000 errcode=00000014 ilen=00000000
-[  573.298823] VMExit: intr_info=00000000 errcode=00000000 ilen=00000003
-[  573.305409]         reason=00000012 qualification=0000000000000000
-...
-[  573.317192] TSC Offset = 0xffffd9992cb2a064
-...
-[  573.332923] EPT pointer = 0x00000017789b501e
-*/
-
-	PHMIGRATEPRINTK("-------- %s() vmx info end <%d> smp_processor_id() %d -------\n\n",
-									__func__, vcpu->vcpu_id, smp_processor_id());
-#endif
 }
 #endif
 
@@ -9027,7 +8298,7 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		vcpu->run->exit_reason = KVM_EXIT_FAIL_ENTRY;
 		vcpu->run->fail_entry.hardware_entry_failure_reason
 			= exit_reason;
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 		printk("\n\n\n"
 				"========================\n"
 				"pophype: [back_migrate not happen] <%d> 0x%llx\n"
@@ -9042,7 +8313,7 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		vcpu->run->exit_reason = KVM_EXIT_FAIL_ENTRY;
 		vcpu->run->fail_entry.hardware_entry_failure_reason
 			= vmcs_read32(VM_INSTRUCTION_ERROR);
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 		printk("[back_migrate BUG] <%d> vmx->fail %d "
 				"vmvmcs_read32(VM_INSTRUCTION_ERROR) 0x%llx\n",
 				vcpu->vcpu_id, vmx->fail,
@@ -9063,14 +8334,6 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 			exit_reason != EXIT_REASON_EPT_VIOLATION &&
 			exit_reason != EXIT_REASON_PML_FULL &&
 			exit_reason != EXIT_REASON_TASK_SWITCH)) {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		static unsigned long deliver_ev_cnt = 0;
-		deliver_ev_cnt++;
-		if (deliver_ev_cnt < VM_SINGLE_HANDLE_DISPLAY_CNT)
-			printk("%s(): <%d> What makes 17?? deliver_ev vmx->reason %u "
-					"vector (%s)\n", __func__, vcpu->vcpu_id, exit_reason,
-					(vectoring_info & VECTORING_INFO_VALID_MASK)?"O":"X");
-#endif
 		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
 		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_DELIVERY_EV;
 		vcpu->run->internal.ndata = 2;
@@ -9103,29 +8366,6 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 	    && kvm_vmx_exit_handlers[exit_reason]) {
 		int ret = kvm_vmx_exit_handlers[exit_reason](vcpu);
 							/* e.g. handle_ept_violation*/
-#if HYPE_PERF_CRITICAL_DEBUG
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		if (exit_reason == EXIT_REASON_EXCEPTION_NMI)
-			printk("[%d] handle_exception(): ret %d\n", current->pid, ret);
-
-		/* handle ret and exit_reason outside */
-		/*
-		// r = kvm_x86_ops->handle_exit(vcpu); (./arch/x86/kvm/x86.c)
-		// | r = vcpu_enter_guest(vcpu);
-				while (1) {
-					if (r <= 0)
-						break;
-				}
-				return r;
-			Returns 1 to let vcpu_run() continue the guest execution loop without
-			exiting to the userspace.  Otherwise, the value will be returned to the
-			userspace.
-		//  | r = vcpu_run(vcpu); (arch/x86/kvm/x86.c)
-		//   | r = kvm_arch_vcpu_ioctl_run(vcpu, vcpu->run); (virt/kvm/kvm_main.c)
-		// exit_reason: #define EXIT_REASON_POPHYPE_MIGRATE     78
-		*/
-#endif
-#endif
 		return ret;
 	} else {
 		WARN_ONCE(1, "vmx: unexpected exit reason 0x%x\n", exit_reason);
@@ -9499,63 +8739,10 @@ static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 					msrs[i].host);
 }
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-//static unsigned long io_exit_cnt = 0;
-static unsigned long exit_ext_int_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long enter_ext_int_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long exit_ept_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long enter_ept_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long exit_io_ist_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long enter_io_ist_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long exit_cpuid_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long enter_cpuid_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long exit_dr_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long enter_dr_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long exit_pinst_cnt[MAX_POPCORN_NODES] = {0};
-static unsigned long enter_pinst_cnt[MAX_POPCORN_NODES] = {0};
-//EXIT_REASON_IO_INSTRUCTION
-#endif
 static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	unsigned long debugctlmsr, cr4;
-
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	//static int first[32] = 1; /* TODO MAX_VCPU*/
-	static int first[4] = {1, 1, 1, 1}; /* TODO MAX_VCPU*/
-	static int first_ckpt1[4] = {1, 1, 1, 1}; /* TODO MAX_VCPU*/
-	static int first_exit[4] = {1, 1, 1, 1}; /* TODO MAX_VCPU*/
-
-	HPPRINTK("<%d> %s: 6 (too verbose)\n", current->pid, __func__);
-#endif
-
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	if (first_ckpt1[vcpu->vcpu_id]) { /* first check after vm exit */
-		first_ckpt1[vcpu->vcpu_id] = 0;
-		printk("--------------------------------------------------------\n");
-		printk("--------------------------------------------------------\n");
-		printk("-------- <%d> %s %s(): first_ckpt1 start --------\n",
-					vcpu->vcpu_id, __FILE__, __func__);
-		printk("--------------------------------------------------------\n");
-		printk("--------------------------------------------------------\n");
-		printk("vmx->emulation_required %d\n", vmx->emulation_required);
-		printk("vmx->ple_window_dirty %d\n", vmx->ple_window_dirty);
-		printk("vmx->nested.sync_shadow_vmcs %d\n", vmx->nested.sync_shadow_vmcs);
-		printk("test_bit(VCPU_REGS_RSP, (unsigned long *)&vcpu->arch.regs_dirty) %d\n",
-				test_bit(VCPU_REGS_RSP, (unsigned long *)&vcpu->arch.regs_dirty));
-		printk("test_bit(VCPU_REGS_RIP, (unsigned long *)&vcpu->arch.regs_dirty) %d\n",
-				test_bit(VCPU_REGS_RIP, (unsigned long *)&vcpu->arch.regs_dirty));
-		printk("cr4 != vmx->host_state.vmcs_host_cr4 %d\n", cr4_read_shadow() != vmx->host_state.vmcs_host_cr4);
-		printk("vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP %lx\n", vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP);
-		printk("--------------------------------------------------------\n");
-		printk("--------------------------------------------------------\n");
-		printk("----------- <%d> %s %s(): first_ckpt1 end -----------\n",
-							vcpu->vcpu_id, __FILE__, __func__);
-		printk("--------------------------------------------------------\n");
-		printk("--------------------------------------------------------\n");
-		printk("\n\n");
-	}
-#endif
 
 	/* Record the guest's net vcpu time for enforced NMI injections. */
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked))
@@ -9586,72 +8773,6 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 		vmcs_writel(HOST_CR4, cr4);
 		vmx->host_state.vmcs_host_cr4 = cr4;
 	}
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	if (vmx->exit_reason == EXIT_REASON_EXCEPTION_NMI) { // 0
-		VMPRINTK("\t[%d] %s(): %s<%d>%s vmx->exit %u "
-					"re-enter EXT_INT#%lu EPT#%lu IO_IST#%lu CPUID#%lu\n",
-					current->pid, __func__,
-					vcpu->vcpu_id ? "**":"",
-					vcpu->vcpu_id ? 1:0,
-					vcpu->vcpu_id ? "**":"",
-					vmx->exit_reason, enter_ext_int_cnt[vcpu->vcpu_id],
-					enter_ept_cnt[vcpu->vcpu_id],
-					enter_io_ist_cnt[vcpu->vcpu_id],
-					enter_cpuid_cnt[vcpu->vcpu_id]);
-	} else {
-		if (!current->mm->remote) {
-			if (vmx->exit_reason == EXIT_REASON_EXTERNAL_INTERRUPT) { //1
-				enter_ext_int_cnt[vcpu->vcpu_id]++;
-				//dump_stack();
-			} else if (vmx->exit_reason == EXIT_REASON_EPT_VIOLATION) { // 48
-				enter_ept_cnt[vcpu->vcpu_id]++;
-				if (enter_ept_cnt[vcpu->vcpu_id] < VM_SINGLE_HANDLE_DISPLAY_CNT) // only show 3
-					goto show;
-			} else if (vmx->exit_reason == EXIT_REASON_IO_INSTRUCTION) {
-				enter_io_ist_cnt[vcpu->vcpu_id]++;
-			} else if (vmx->exit_reason == EXIT_REASON_CPUID) { // 10
-				enter_cpuid_cnt[vcpu->vcpu_id]++;
-			} else if (vmx->exit_reason == EXIT_REASON_DR_ACCESS) { // 29
-				enter_dr_cnt[vcpu->vcpu_id]++;
-			} else if (vmx->exit_reason == EXIT_REASON_PENDING_INTERRUPT) { // 7
-			} else if (vmx->exit_reason == EXIT_REASON_APIC_ACCESS) { // 44
-			} else if (vmx->exit_reason == EXIT_REASON_CR_ACCESS) { // 28
-			} else if (vmx->exit_reason == EXIT_REASON_MSR_READ) { // 31
-			} else if (vmx->exit_reason == EXIT_REASON_APIC_WRITE) { // 56
-			} else if (vmx->exit_reason == EXIT_REASON_HLT) { // 12
-			} else if (vmx->exit_reason == EXIT_REASON_PAUSE_INSTRUCTION) { // 40 (before AP boots)
-				enter_pinst_cnt[vcpu->vcpu_id]++;
-			} else {
-show:
-				VMPRINTK("\t[%d] %s(): %s<%d>%s vmx->exit %u "
-						"re-enter EXT_INT#%lu EPT#%lu "
-						"IO_IST#%lu CPUID#%lu PINST#%lu\n",
-							current->pid, __func__,
-							vcpu->vcpu_id ? "**":"",
-							vcpu->vcpu_id ? 1:0,
-							vcpu->vcpu_id ? "**":"",
-						vmx->exit_reason, enter_ext_int_cnt[vcpu->vcpu_id],
-					enter_ept_cnt[vcpu->vcpu_id], enter_io_ist_cnt[vcpu->vcpu_id],
-					enter_cpuid_cnt[vcpu->vcpu_id], enter_pinst_cnt[vcpu->vcpu_id]);
-			}
-		} else {
-			/* popcorn - any first VM_SINGLE_HANDLE_DISPLAY_CNT */
-			//if (current->at_remote) {
-				static unsigned long remote_enter_vmx_reason = 0;
-				remote_enter_vmx_reason++;
-				if ((remote_enter_vmx_reason < 30)
-						|| (remote_enter_vmx_reason > 2200 &&
-							remote_enter_vmx_reason < 2300)) {
-					//printk("\t[%d] %s(): <%d><remote> re-entering "
-					VMPRINTK("\t[%d] %s(): <%d> re-enter "
-							"vmx->exit %d #%lu\n",
-							current->pid, __func__, vcpu->vcpu_id,
-							vmx->exit_reason, remote_enter_vmx_reason);
-				}
-			//}
-		}
-	}
-#endif
 
 	/* When single-stepping over STI and MOV SS, we must clear the
 	 * corresponding interruptibility bits in the guest state. Otherwise
@@ -9664,56 +8785,6 @@ show:
 	atomic_switch_perf_msrs(vmx);
 	debugctlmsr = get_debugctlmsr();
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	if (first[vcpu->vcpu_id]) { /* final check beore vm entry */
-	//if (first && vcpu->vcpu_id) { /* final check beore vm entry */
-		//first = 0;
-		first[vcpu->vcpu_id] = 0;
-		{ int z;
-			printk("\n\n\n\n\n\n\n");
-			printk("====================================================\n");
-			printk("====================================================\n");
-			printk("n=====[debug] <%d> %s %s(): "
-					"last check before 1st vm-entry start [debug]=====\n",
-					vcpu->vcpu_id, __FILE__, __func__);
-			printk("====================================================\n");
-			printk("====================================================\n");
-			for (z = 0; z < 10; z++) {
-				printk("--- last check before 1st vm-entry start - vcpu_run vcpu <%d> %p vcpu->cpu %d "
-						"smp_processor_id %d vmx %p ---\n",
-						vcpu->vcpu_id, vcpu, vcpu->cpu, smp_processor_id(), vmx);
-			}
-			printk("============[debug] last check before 1st vm-entry start [debug]=================\n\n");
-		}
-		printk("[pophypemigrate] ****** <%d> vcpu->run->apic_base %llx ******\n", vcpu->vcpu_id, vcpu->run->apic_base);
-		if (vcpu->vcpu_id && !my_nid && !vcpu->run->apic_base) {
-			printk("HACK HACK HACK[[ophypemigrate] ****** <%d> vcpu->run->apic_base %llx ******\n", vcpu->vcpu_id, vcpu->run->apic_base);
-			vcpu->run->apic_base = 0xfee00800;
-		}
-		printk("[pophypemigrate] ****** <%d> vcpu->run->apic_base %llx ******\n", vcpu->vcpu_id, vcpu->run->apic_base);
-		printk("[ck]:[diff][efer] vcpu->arch.efer %llx\n", vcpu->arch.efer);
-		pophype_check_vmcs(vcpu);
-		PHMIGRATEPRINTK("\n-------------- last check before 1st VMENTRY dump_vmcs <%d> start ---------------\n", vcpu->vcpu_id);
-		dump_vmcs();
-		PHMIGRATEPRINTK("-------------- last check before 1st VMENTRY dump_vmcs <%d> end ---------------\n\n", vcpu->vcpu_id);
-		{ int z;
-			for (z = 0; z < 10; z++) {
-				printk("%s(): vcpu_run vcpu <%d> vcpu->cpu %d RUN!!! "
-						"in_atomic(): %d smp_processor_id %d end\n", __func__,
-						vcpu->vcpu_id, vcpu->cpu, in_atomic(), smp_processor_id());
-			}
-			printk("====================================================\n");
-			printk("====================================================\n");
-			printk("=======[debug] last check before vm-entry end [debug]======\n");
-			printk("====================================================\n");
-			printk("====================================================\n");
-			printk("\n\n\n");
-
-		}
-	}
-
-	/* save host info. load vmcs guest reg. */
-#endif
 	vmx->__launched = vmx->loaded_vmcs->launched;
 	asm(
 		/* Store host registers */
@@ -9867,68 +8938,8 @@ show:
 	vmx->exit_reason = vmcs_read32(VM_EXIT_REASON);
 
 #if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-///////////////////////////////////////////////////////////////
 	BUG_ON(distributed_remote_process(current) &&
 						vcpu->vcpu_id && !my_nid);
-///////////////////////////////////////////////////////////////
-	if (!current->mm->remote) {
-		if (vmx->exit_reason == EXIT_REASON_EXTERNAL_INTERRUPT) { //1
-			exit_ext_int_cnt[vcpu->vcpu_id]++;
-			//dump_stack();
-		} else if (vmx->exit_reason == EXIT_REASON_EPT_VIOLATION) {
-			exit_ept_cnt[vcpu->vcpu_id]++;
-			if (exit_ept_cnt[vcpu->vcpu_id] < 10)
-				goto show_exit;
-		} else if (vmx->exit_reason == EXIT_REASON_IO_INSTRUCTION) {
-			exit_io_ist_cnt[vcpu->vcpu_id]++;
-		} else if (vmx->exit_reason == EXIT_REASON_CPUID) {
-			exit_cpuid_cnt[vcpu->vcpu_id]++;
-		} else if (vmx->exit_reason == EXIT_REASON_DR_ACCESS) { // 29
-			exit_dr_cnt[vcpu->vcpu_id]++;
-		} else if (vmx->exit_reason == EXIT_REASON_PENDING_INTERRUPT) { // 7
-		} else if (vmx->exit_reason == EXIT_REASON_APIC_ACCESS) { // 44
-		} else if (vmx->exit_reason == EXIT_REASON_CR_ACCESS) { // 28
-		} else if (vmx->exit_reason == EXIT_REASON_MSR_READ) { // 31
-		} else if (vmx->exit_reason == EXIT_REASON_APIC_WRITE) { // 56
-		} else if (vmx->exit_reason == EXIT_REASON_HLT) { // 12
-		} else if (vmx->exit_reason == EXIT_REASON_PAUSE_INSTRUCTION) { // 40 (before AP boots)
-			exit_pinst_cnt[vcpu->vcpu_id]++;
-		} else {
-show_exit:
-			VMPRINTK("\t[%d] %s(): %s<%d>%s vmx->exit %u "
-						"exit EXT_INT#%lu EPT#%lu IO_IST#%lu "
-						"CPUID#%lu PINST#%lu\n",
-						current->pid, __func__,
-						vcpu->vcpu_id ? "**":"",
-						vcpu->vcpu_id ? 1:0,
-						vcpu->vcpu_id ? "**":"",
-						vmx->exit_reason, exit_ext_int_cnt[vcpu->vcpu_id],
-						exit_ept_cnt[vcpu->vcpu_id],
-						exit_io_ist_cnt[vcpu->vcpu_id],
-						exit_cpuid_cnt[vcpu->vcpu_id],
-						exit_pinst_cnt[vcpu->vcpu_id]);
-		}
-	} else {
-			/* popcorn - any first VM_SINGLE_HANDLE_DISPLAY_CNT at remote */
-		if (current->at_remote) {
-			static unsigned long remote_exit_vmx_reason = 0;
-			remote_exit_vmx_reason++;
-			if (remote_exit_vmx_reason < VM_ALL_HANDLE_DISPLAY_CNT)
-				VMPRINTK("\t[%d] %s(): <%d><remote> exit vmx->exit_reason %u "
-						"first#%lu\n",
-						current->pid, __func__, vcpu->vcpu_id,
-						vmx->exit_reason, remote_exit_vmx_reason);
-		}
-	}
-#endif
-
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	if (first_exit[vcpu->vcpu_id]) { /* first check after vm exit */
-		first_exit[vcpu->vcpu_id] = 0;
-		PHMIGRATEPRINTK("\n-------------- after 1st VMEXIT check dump_vmcs <%d> start ---------------\n", vcpu->vcpu_id);
-		dump_vmcs();
-		PHMIGRATEPRINTK("-------------- after 1st VMEXIT check dump_vmcs <%d> end ---------------\n\n", vcpu->vcpu_id);
-	}
 #endif
 
 	/*
@@ -10004,7 +9015,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 
 	vmx->vpid = allocate_vpid();
 
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 	VCPUPRINTK("%s: vcpu_vmx(vmx) %p (per-cpu) -> vcpu %p & "
 				"->vpid %d (vcpu id from 1)\n",
 				__func__, vmx, &vmx->vcpu, vmx->vpid);
@@ -10022,7 +9033,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	 * for the guest, etc.
 	 */
 	if (enable_pml) {
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 		HPPRINTK("[arch] %s: enable_pml ON\n", __func__);
 #endif
 		vmx->pml_pg = alloc_page(GFP_KERNEL | __GFP_ZERO);
@@ -10056,14 +9067,14 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	err = vmx_vcpu_setup(vmx);
 	vmx_vcpu_put(&vmx->vcpu);
 	put_cpu();
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 	HPPRINTK("%s: vmx->vcpu.cpu [[%d]]\n", __func__, vmx->vcpu.cpu);
 #endif
 	if (err)
 		goto free_vmcs;
 
 	if (cpu_need_virtualize_apic_accesses(&vmx->vcpu)) {
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 		HPPRINTK("[arch][*/?] %s: enable_vapic_access ON -> vm_mmap()\n",
 															__func__);
 #endif
@@ -10073,7 +9084,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	}
 
 	if (enable_ept) {
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 		HPPRINTK("[arch][*/?] %s: enable_ept ON\n", __func__);
 #endif
 		if (!kvm->arch.ept_identity_map_addr)
@@ -10085,7 +9096,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	}
 
 	if (nested) {
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 		HPPRINTK("[arch][ /?] %s: nested ON\n", __func__);
 #endif
 		nested_vmx_setup_ctls_msrs(vmx);
@@ -10110,18 +9121,6 @@ uninit_vcpu:
 free_vcpu:
 	free_vpid(vmx->vpid);
 	kmem_cache_free(kvm_vcpu_cache, vmx);
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
-	if (err < 0) {
-		printk("\n**********************************\n"
-				"**********************************\n"
-				"\t\t[[[[[[[vcpu_id %d failed to create ret %d ]]]]]]]\n"
-				"**********************************\n"
-				"**********************************\n",
-				id, err);
-	} else {
-		printk("%s(): all DONE created\n", __func__);
-	}
-#endif
 	return ERR_PTR(err);
 }
 
@@ -10805,7 +9804,7 @@ static void prepare_vmcs02(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12)
 	vmcs_writel(GUEST_PENDING_DBG_EXCEPTIONS,
 		vmcs12->guest_pending_dbg_exceptions);
 #ifdef CONFIG_POPCORN_HYPE
-		printk("[migration] pophype should not be here\n");
+	printk("[migration] pophype should not be here\n");
 #endif
 	vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->guest_sysenter_esp);
 	vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->guest_sysenter_eip);
@@ -11637,7 +10636,6 @@ static void load_vmcs12_host_state(struct kvm_vcpu *vcpu,
 		 */
 		vmx_flush_tlb(vcpu);
 	}
-
 
 #ifdef CONFIG_POPCORN_HYPE
 	printk("[migration] pophype should not be here\n");
