@@ -44,144 +44,29 @@
 #ifdef CONFIG_POPCORN_HYPE
 #include <linux/mmu_notifier.h>
 #define HYPE_RETRY (-78)
-//#define KERNEL_PGS (PAGE_SIZE * 1024 * 1024 / 1024)
-#define KERNEL_PGS (0xd0000 + 0x30000) // 0xd0000 + 0x30000 = 1048576 // works
-//#define KERNEL_PGS (2017020) // try debuging 1117020
+#define KERNEL_PGS (0xd0000 + 0x30000)
 
-/*
- * Eighter one
- */
-/* when debuging ap */
-//#define ORIGIN_PGFAULT_SKIP (48000 + KERNEL_PGS)
-////#define REMOTE_PGFAULT_SKIP (0 + KERNEL_PGS) // standard
-//#define REMOTE_PGFAULT_SKIP (0 + KERNEL_PGS + 1000) // faster
-//#define PGFAULT_REQ_AT_ORIGIN_SKIP (0 + KERNEL_PGS)
-//#define PGFAULT_REQ_AT_REMOTE_SKIP (0 + 0)
-
-/* when mount_root() debugging */
-//  >>
-//  1142478
-//- 1048576
-//    70000
-
-//   1099214
-// - 1048576
-//     50000
-//  >>
-//#define ORIGIN_PGFAULT_SKIP (95000 + KERNEL_PGS)
 #define ORIGIN_PGFAULT_SKIP (115000 + KERNEL_PGS)
-//#define REMOTE_PGFAULT_SKIP (0 + KERNEL_PGS + 50000) // faster
-#define REMOTE_PGFAULT_SKIP (0 + KERNEL_PGS + 65000) // faster
-//1130111
-// 1048576
+#define REMOTE_PGFAULT_SKIP (0 + KERNEL_PGS + 65000)
 
 #define PGFAULT_REQ_AT_ORIGIN_SKIP (40000 + KERNEL_PGS)
-//#define PGFAULT_REQ_AT_REMOTE_SKIP (0 + 22000)
 #define PGFAULT_REQ_AT_REMOTE_SKIP (0 + 50000)
 
-// 1117044
-
-// PAGEFAULT_
-//   1076801  1089362
-// - 1048576
-//     28000
-
-// remote
-// 22044
-// PAGEFAULT_
-
-/* mount_root() */
-// origin pg 1114693 1100000
-// remote pg 1079782 1070000
-// origin inv
-// remote inv 51404 50000
-
-// origin
-//		## PAGEFAULT [8730] 700990 R 429eb4 54 8000000000000865 vm_ops ffffffffa04835c0 #1115512
-//[  957.232533] 			>>[8748] 700000 ffff88084f3e5460 #1142478
-//[  957.232534] 			  [8748] ->[2696/1] 700000 r 0 #1076800
-// 			->REMOTE_PAGE_REQUEST [8748] 700000 W(INV) 429f15 from [2696/1] #1076801
-//[  957.264378] 			>>[8748] 700000 ffff88084f3e5460 #1142480
-//[  957.264379] 			  [8748] ->[2696/1] 700000 r 1000 #1076801
-
-
-// remote
-//	## PAGEFAULT [2696] 7ffec1f1b000 W 468797 1 8000000000000866           (null) #1081141
-//[ 1040.983829]  =[2696] 7ffec1f1b000 ffff880859daecd0 INVALIDATE_PAGE
-//[ 1040.983831]   [2696] ->[8748/0] 7ffec1f1b000 instr 468797
-//[ 1040.989298] 			>>[2696] 7ffec1f1b000 ffff880859daecd0 #1099175
-//[ 1041.003993]
-//
-//			->REMOTE_PAGE_REQUEST [2614] 7fffefff3000 R 468797 from [8747/0] ***#22044***
-//[ 1041.444157] 			  [2614] ->[8747/0] 7fffefff3000 r 0 #22044
-//[ 1041.449692]  =[2696] 7fffefff3000 ffff88085252f208 INVALIDATE_PAGE
-//[ 1041.449754]
-//		INVALIDATE_PAGE [2614] 7fffefff3000 [8747/0] #48738
-//		[ 1041.449756]   [2614] inv 7fffefff3000 but local write ongoing, wait
-//		[ 1041.449757]  +[2614] 7fffefff3000 ffff88085252f208 (follower) #48738
-//		[ 1041.476176]   [2696] ->[8748/0] 7fffefff3000 instr 468797
-//		[ 1041.481654] 			>>[2696] 7fffefff3000 ffff88085252f208 #1099214
-//		[ 1041.487534]  =[2614] 7fffefff3000 ffff88085252f208 (inv follower done)
-//		[ 1041.494191]
-
-
-/*** origin revoke remote INVALIDATE_PAGE
- *  revoke	->
- *				INV
- *			<-
- */
-// smp debug
-//#define COMM_INV_CNT (47500) // 47633 // works right before smp boot process
-// mount_root() debug
-
-// 101000: first bash
-// 51500: last use
-// 47633 // works right before smp boot process
-#define COMM_INV_CNT (123000) // 150000(good for manually dynamic debug) has to run 3t one time to see the logs
+#define COMM_INV_CNT (123000)
 #define ORIGIN_REVOKE (COMM_INV_CNT)
 #define REMOTE_REVOKE (0)
 #define ORIGIN_INVPG (0)
-#define REMOTE_INVPG (COMM_INV_CNT) // + 0xc0000 + 0x30000)
-
-
-
-
+#define REMOTE_INVPG (COMM_INV_CNT)
 
 /* remotefault at remote RETRY */
-//#define RETRY_REMOTEFAULT 100000000 //good
-//#define RETRY_ORIGINFAULT_AT_ORIGIN 100
 #define RETRY_ORIGINFAULT_AT_ORIGIN 10000000
-//#define RETRY_REMOTEFAULT 1000 // bad
-//#define RETRY_REMOTEFAULT 100
 #define RETRY_REMOTEFAULT 10
 #define RETRY_REMOTEFAULT_GIVEUP 1 /* issue BUG() at origin */
 
-/* DSM traffic debug */
-//#define MAX_VM_STACK_DEBUG 3
-//struct dsm_pgfault {
-//	unsigned long addr; /* faulting addr */
-//	unsigned long inst;
-//	unsigned long rbp;
-//	unsigned long rsp;
-//	unsigned long stack[MAX_VM_STACK_DEBUG];
-//	unsigned long cnt; /* freq */
-//	unsigned long long time; /* total */
-//};
-//typedef struct {
-//	unsigned long addr; /* faulting addr */
-//	unsigned long inst;
-//	unsigned long rbp;
-//	unsigned long rsp;
-//	unsigned long stack[MAX_VM_STACK_DEBUG];
-//	unsigned long cnt; /* freq */
-//	unsigned long long time; /* total */
-//} dsm_traffic_t;
 #define DSM_TRAFFIC_PG_CNT 6500
-#define DSM_TRAFFIC_INST_CNT 1500 // change to dynamic otherwise waste time to tune
-#define DSM_TRAFFIC_RSP_CNT 10 // change to dynamic otherwise waste time to tune
-/* [*][0] indicates the addr; */
-//struct dsm_pgfault **dsm_traffic = NULL;
-dsm_traffic_t ***dsm_traffic = NULL; /* TODO move this to trace... out of mem */
+#define DSM_TRAFFIC_INST_CNT 1500
+#define DSM_TRAFFIC_RSP_CNT 10
+dsm_traffic_t ***dsm_traffic = NULL;
 unsigned long dsm_traffic_pg_cnt = DSM_TRAFFIC_PG_CNT;
 unsigned long dsm_traffic_inst_cnt = DSM_TRAFFIC_INST_CNT;
 unsigned long dsm_traffic_rsp_cnt = DSM_TRAFFIC_RSP_CNT;
@@ -197,39 +82,11 @@ static unsigned long dbg_dsm_traffic_good_cnt = 0; /* vmdsm cnt */
 static unsigned long g_lfal_retry_cnt = 0;
 #endif
 
-/* (##)localfault -> (-/=)follower/leader -> (>>)finish
- * 											fault_flags pte_flags(pte_val)
- * ## PAGEFAULT [3249] 7ffec1f1a000 W 468267 d 8000000000000866
- *  =[3249] 7ffec1f1a000 replicated not mine ffff88084ed3ebe0(fh)
- * >>[3249] 7ffec1f1a000 ffff88084ed3ebe0(fh)
- *
- *
- * (->)send
- * REMOTE_PAGE_REQUEST [3251] 7ffec1802000 R 468267 from [2692/1]
- * >>[3251] 7ffec1802000 ffff88083697ba00
- *   [3251] ->[2692/1] 0
- *
- * (>>)last_fini (>)!last_fini
- *  >[3251] 7ffec1802000 ffff88083697ba00
- * >>[3251] 7ffec1802000 ffff88083697ba00
- *
- *
- * INVALIDATION:
- *  +[] (optional)(found fh existing (foller))
- *  =[] (done leader/follower)
- * no >>[]
- *
- *
- * =[] at remote: only inv complet and
- */
 #ifdef CONFIG_POPCORN_STAT_PGFAULTS
 #define MICROSECOND 1000000
 atomic64_t mm_cnt = ATOMIC64_INIT(0);
 atomic64_t mm_time_ns = ATOMIC64_INIT(0);
 
-/* local origin & it has to bring from remote (RW)*/
-//atomic64_t ptef_ns = ATOMIC64_INIT(0);
-//atomic64_t ptef_cnt = ATOMIC64_INIT(0);
 /* local_origin & __claim_remote_page(1)(!pg_mine)(RW) */
 atomic64_t clr_ns = ATOMIC64_INIT(0);
 atomic64_t clr_cnt = ATOMIC64_INIT(0);
@@ -307,13 +164,6 @@ void pf_time_stat(struct seq_file *seq, void *v)
 					"per", atomic64_read(&mm_cnt) ?
 					 atomic64_read(&mm_time_ns)/atomic64_read(&mm_cnt)/1000 : 0);
 
-		//seq_printf(seq, "%4s  %10ld.%06ld (s)  %3s %-10ld   %3s %-6ld (us)\n",
-		//			"ptef", (atomic64_read(&ptef_ns) / 1000) / MICROSECOND,
-		//					(atomic64_read(&ptef_ns) / 1000)  % MICROSECOND,
-		//			"cnt", atomic64_read(&ptef_cnt),
-		//			"per", atomic64_read(&ptef_cnt) ?
-		//			 atomic64_read(&ptef_ns)/atomic64_read(&ptef_cnt)/1000 : 0);
-
 		seq_printf(seq, "%4s  %10ld.%06ld (s)  %3s %-10ld   %3s %-6ld (us)\n",
 					"clr", (atomic64_read(&clr_ns) / 1000) / MICROSECOND,
 							(atomic64_read(&clr_ns) / 1000)  % MICROSECOND,
@@ -368,8 +218,6 @@ void pf_time_stat(struct seq_file *seq, void *v)
         atomic64_set(&mm_cnt, 0);
         atomic64_set(&mm_time_ns, 0);
 
-		//atomic64_set(&ptef_cnt, 0);
-		//atomic64_set(&ptef_ns, 0);
 		atomic64_set(&clr_cnt, 0);
 		atomic64_set(&clr_ns, 0);
 		atomic64_set(&fp_ns, 0);
@@ -403,16 +251,11 @@ void write_dsm_traffic (dsm_traffic_t *_dsm_traffic,
 	_dsm_traffic->rip = rip;
 	_dsm_traffic->rbp = rbp;
 	_dsm_traffic->rsp = rsp;
-//	_dsm_traffic->stack[0] = stack0;
-//	_dsm_traffic->stack[1] = stack1;
-//	_dsm_traffic->stack[2] = stack2;
-//	_dsm_traffic->cnt = cnt;
 }
 
 /* address: full addr
  * addr: page algiend addr
  */
-//#include <kvm/kvm_cache_regs.h>
 #include "../../arch/x86/kvm/kvm_cache_regs.h"
 #define __ex_clear(x, reg) \
 	____kvm_handle_fault_on_reboot(x, "xor " reg " , " reg)
@@ -427,8 +270,6 @@ static __always_inline unsigned long vmcs_readl(unsigned long field)
 void __dsm_traffic_collect(unsigned long address, unsigned long addr, char op, struct kvm_vcpu *vcpu, unsigned long ns, unsigned long real_gva, unsigned long _exit_qualification)
 {
 #if HYPE_PERF_CRITICAL_DSM_TRAFFIC_DEBUG
-	//all_local_dsm_traffic_cnt++;
-
 	/* From handle_ept_violation */
 	unsigned long exit_qualification = vcpu->arch.exit_qualification;
 	unsigned long rip = kvm_rip_read(vcpu);
@@ -436,87 +277,41 @@ void __dsm_traffic_collect(unsigned long address, unsigned long addr, char op, s
 	gpa_t gla = -1;
 
 	if (gla_validity & 0x1)
-		gla = vmcs_readl(GUEST_LINEAR_ADDRESS); // check Table 27-7 Intel manual
-	/* rip, gla, exit_qualification */
+		gla = vmcs_readl(GUEST_LINEAR_ADDRESS);
 
-
-	/* debug DSM trafic perf slow down */
 	/* Usage:
-	 * within 2 echo > /proc/popcorn_debug, do you want to
-	 *		trace & rank ALL pgafault or only the following tops?
+	 * 		within 2 echo > /proc/popcorn_debug, do you want to
+	 *			trace & rank ALL pgafault or only the following tops?
 	 */
 	if (pophype_debug) { /* Controlled by /proc/popcorn_debug */
-		/* all or specific addresses extract by popcorn_trace top 30 */
-		/* For lemp */
-			//unsigned long inst;
-			dsm_traffic_t __dsm_traffic;
-#if HYPE_PERF_CRITICAL_DSM_TRAFFIC_PRINTK
-			//dsm_traffic_t _dsm_traffic;
-			//dbg_dsm_traffic_cnt++;
-			/* show cnt */
-			//POP_PK("pophype: do kvm_reg_dump() 0x%lx #%lu\n",
-			//					address, dbg_dsm_traffic_cnt);
-			//_dsm_traffic = pophype_show_guest_rip_rsp(address, true);
-			//if (_dsm_traffic.rip != 0) {
-			//}
-#endif
+		dsm_traffic_t __dsm_traffic;
+		__dsm_traffic = pophype_show_guest_rip_rsp(address, false, vcpu);
+		dbg_dsm_traffic_cnt++;
 
-#if 1
-			__dsm_traffic = pophype_show_guest_rip_rsp(address, false, vcpu);
-			dbg_dsm_traffic_cnt++;
-
-			/* Trace: todo show it in trace */
-			all_local_dsm_traffic_cnt++;
-			//if (__dsm_traffic.rip != 0)
-			{
-				int kvm_mp_state = KVM_MP_STATE_UNKNOW;
-				if (vcpu) {
-					kvm_mp_state = vcpu->arch.mp_state;
-					//#define KVM_MP_STATE_RUNNABLE          0
-					//#define KVM_MP_STATE_UNINITIALIZED     1
-					//#define KVM_MP_STATE_INIT_RECEIVED     2
-					//#define KVM_MP_STATE_HALTED            3
-					//#define KVM_MP_STATE_SIPI_RECEIVED     4
-					//#define KVM_MP_STATE_STOPPED           5
-					//#define KVM_MP_STATE_CHECK_STOP        6
-					//#define KVM_MP_STATE_OPERATING         7
-					//#define KVM_MP_STATE_LOAD              8
-					//#define KVM_MP_STATE_UNKNOW            9
-				} else {
-					printk(KERN_ERR "%s() %d:\n", __func__, __LINE__);
-				}
-				dbg_dsm_traffic_good_cnt++;
-				//#include "arch/x86/include/asm/kvm_host.h"
-				//printk("%d\n", kvm_x86_ops->get_cpl(vcpu));
-				//printk("%lu\n", kvm_get_linear_rip(vcpu));
-
-				// cpl
-				// arch/x86/kvm/x86.c ->
-				// kvm_x86_ops->get_cpl(vcpu)
-
-				// node
-				//enum {
-				//    OUTSIDE_GUEST_MODE, 			0
-				//    IN_GUEST_MODE,				1
-				//    EXITING_GUEST_MODE,			2
-				//    READING_SHADOW_PAGE_TABLES,	3
-				//};
-				trace_vmdsm_traffic(addr, op, __dsm_traffic.rip,
-						__dsm_traffic.rbp, __dsm_traffic.rsp,
-						__dsm_traffic.stack[0], __dsm_traffic.stack[1],
-						__dsm_traffic.stack[2], __dsm_traffic.stack[3],
-						__dsm_traffic.stack[4], address, kvm_mp_state, ns,
-						kvm_x86_ops->get_cpl(vcpu), vcpu->mode,
-						kvm_get_linear_rip(vcpu),
-						gla, exit_qualification);
+		/* Trace: todo show it in trace */
+		all_local_dsm_traffic_cnt++;
+		{
+			int kvm_mp_state = KVM_MP_STATE_UNKNOW;
+			if (vcpu) {
+				kvm_mp_state = vcpu->arch.mp_state;
+			} else {
+				printk(KERN_ERR "%s() %d:\n", __func__, __LINE__);
 			}
-#endif
+			dbg_dsm_traffic_good_cnt++;
 
+			trace_vmdsm_traffic(addr, op, __dsm_traffic.rip,
+					__dsm_traffic.rbp, __dsm_traffic.rsp,
+					__dsm_traffic.stack[0], __dsm_traffic.stack[1],
+					__dsm_traffic.stack[2], __dsm_traffic.stack[3],
+					__dsm_traffic.stack[4], address, kvm_mp_state, ns,
+					kvm_x86_ops->get_cpl(vcpu), vcpu->mode,
+					kvm_get_linear_rip(vcpu),
+					gla, exit_qualification);
 		}
+	}
 #endif
 }
 
-/* NOT USED */
 void dsm_traffic_collect(unsigned long address, unsigned long addr, char op, unsigned long ns)
 {
 	__dsm_traffic_collect(address, addr, op, NULL, ns, -1, -1);
@@ -536,9 +331,7 @@ void dsm_traffic_stat(struct seq_file *seq, void *v)
 	 * Order it:
 	 *		cat /proc/popcorn_debug | sort -nrk 7 (test)
 	 * 		sort -rk 7 out
-	 * TODO: sum time
 	 */
-	//if (seq && dsm_traffic) {
 	if (seq) {
 		seq_printf(seq, "=== pophype vmdsm info (sanity check) ===\n");
 		seq_printf(seq, "g_lfal_retry_cnt %lu\n", g_lfal_retry_cnt);
@@ -551,35 +344,8 @@ void dsm_traffic_stat(struct seq_file *seq, void *v)
 		seq_printf(seq, "=========================================\n");
 		seq_printf(seq, "all_local_dsm_traffic_cnt %lu\n", // all_prob
 									all_local_dsm_traffic_cnt);
-		//seq_printf(seq, "dbg_dsm_traffic_cnt all %lu\n", dbg_dsm_traffic_cnt);
 		seq_printf(seq, "dbg_dsm_traffic_good_cnt %lu\n", // trace_cnt
 									dbg_dsm_traffic_good_cnt);
-#if 0
-		int i, j, k;
-		seq_printf(seq, "Usage: cat /proc/popcorn_debug | sort -nrk 11\n");
-		for (i = 0; i < dsm_traffic_pg_cnt; i++) {
-			if (dsm_traffic[i][0][0].addr) {
-				for (j = 0; j < dsm_traffic_inst_cnt; j++) {
-					if (dsm_traffic[i][j][0].rip) {
-						for (k = 0; k < dsm_traffic_rsp_cnt; k++) {
-							if (dsm_traffic[i][j][k].cnt > 1000 ) {
-								seq_printf(seq, "[%d][%d] addr: 0x%-12lx "
-									"rip: 0x%-12lx "
-									"rbp: 0x%-12lx rsp: 0x%-12lx"
-									"cnt: %-12lu\n",
-									i,j, dsm_traffic[i][j][k].addr,
-									dsm_traffic[i][j][k].rip,
-									dsm_traffic[i][j][k].rbp,
-									dsm_traffic[i][j][k].rsp,
-									/* TODO tack[] */
-									dsm_traffic[i][j][k].cnt);
-							}
-						}
-					}
-				}
-			}
-		}
-#endif
 	} else { /* write */
 		all_local_dsm_traffic_cnt = 0;
 		dbg_dsm_traffic_cnt = 0;
@@ -898,33 +664,16 @@ static struct fault_handle *__start_invalidation(struct task_struct *tsk, unsign
 		if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
 			((start_inv_cnt > inv_thre || INTERESTED_GVA(addr)) &&
 			NOTINTERESTED_GVA(addr))) {
-			//PGPRINTK(" +[%d] %lx %p (follower) #%lu\n",
-			//			tsk->pid, addr, fh, start_inv_cnt);
 		}
 #endif
 		wait_for_completion(&complete);
-#ifdef CONFIG_POPCORN_HYPE
-		if (pophype_debug ||
-		//if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
-			((start_inv_cnt > inv_thre || INTERESTED_GVA(addr)) &&
-			NOTINTERESTED_GVA(addr))) {
-			//PGPRINTK(" =[%d] %lx %p (inv follower done)\n", tsk->pid, addr, fh);
-		}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 		PGPRINTK(" =[%d] %lx %p (inv follower done)\n", tsk->pid, addr, fh);
 #endif
 		spin_lock(ptl);
 	} else {
 		fh = NULL;
-#ifdef CONFIG_POPCORN_HYPE
-		if (pophype_debug ||
-		//if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
-			((start_inv_cnt > inv_thre || INTERESTED_GVA(addr)) &&
-			NOTINTERESTED_GVA(addr))) {
-			//PGPRINTK(" =[%d] %lx (inv leader) #%lu\n",
-			//			tsk->pid, addr, start_inv_cnt);
-		}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 		PGPRINTK(" =[%d] %lx (inv leader)\n", tsk->pid, addr);
 #endif
 	}
@@ -1061,8 +810,6 @@ out_retry:
 		INTERESTED_GVA(addr)) &&
 		NOTINTERESTED_GVA(addr))) {
 		PGPRINTK("\t\t  [%d] locked. retry 0x%lx %p\n", tsk->pid, addr, fh);
-	} else {
-		//PGPRINTK("  [%d] locked. retry %p\n", tsk->pid, fh);
 	}
 #else
 	PGPRINTK("  [%d] locked. retry %p\n", tsk->pid, fh);
@@ -1085,24 +832,7 @@ static bool __finish_fault_handling(struct fault_handle *fh)
 		wake_up(&fh->waits);
 #endif
 	} else {
-#ifdef CONFIG_POPCORN_HYPE
-		static unsigned long origin_pgfault_fini_cnt = 0;
-		unsigned long origin_pgfault_fini_thre;
-		origin_pgfault_fini_cnt++;
-		if (current->at_remote)
-			origin_pgfault_fini_thre = REMOTE_PGFAULT_SKIP;
-		else
-			origin_pgfault_fini_thre = ORIGIN_PGFAULT_SKIP;
-
-		if (pophype_debug ||
-		//if (pophype_debug || INTERESTED_GVA_2AFTER4(fh->addr) ||
-			((origin_pgfault_fini_cnt > origin_pgfault_fini_thre ||
-			INTERESTED_GVA(fh->addr)) &&
-			NOTINTERESTED_GVA(fh->addr))) {
-			//PGPRINTK("\t\t\t>>[%d] %lx %p #%lu\n",
-			//		fh->pid, fh->addr, fh, origin_pgfault_fini_cnt);
-		}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 		PGPRINTK(">>[%d] %lx %p\n", fh->pid, fh->addr, fh);
 #endif
 		if (fh->complete) {
@@ -1463,10 +1193,6 @@ static void __do_invalidate_page(struct task_struct *tsk, page_invalidate_reques
 		}
 
 		/* origin revoke remote INVALIDATE_PAGE*/
-		//if ((do_inv_cnt > do_inv_thre ||
-		//	INTERESTED_GVA(addr)) &&
-		//	NOTINTERESTED_GVA(addr)) {
-		//if (do_inv_cnt > do_inv_thre || pophype_debug) { /* commented out since im debugging */
 		if (INTERESTED_GVA_2AFTER4(addr)) {
 			PGPRINTK("\n\t\tINVALIDATE_PAGE [%d] %lx [%d/%d] #%lu\n",
 						tsk->pid, addr, req->origin_pid,
@@ -1530,26 +1256,7 @@ static void process_page_invalidate_request(struct work_struct *work)
 
 	__do_invalidate_page(tsk, req);
 
-#ifdef CONFIG_POPCORN_HYPE
-	{
-		static unsigned long process_inv_cnt = 0;
-		unsigned long process_inv_thre;
-		process_inv_cnt++;
-		if (current->at_remote)
-			process_inv_thre = REMOTE_PGFAULT_SKIP;
-		else
-			process_inv_thre = ORIGIN_PGFAULT_SKIP;
-
-		//if (pophype_debug || INTERESTED_GVA_2AFTER4(req->addr) ||
-		if (pophype_debug ||
-			((process_inv_cnt > process_inv_thre ||
-			INTERESTED_GVA(req->addr)) &&
-			NOTINTERESTED_GVA(req->addr))) {
-			//PGPRINTK("\t\t>>[%d] ->[%d/%d] (INV)\n", req->remote_pid, res->origin_pid,
-			//		PCN_KMSG_FROM_NID(req));
-		}
-	}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 	PGPRINTK("\t\t>>[%d] ->[%d/%d]\n", req->remote_pid, res->origin_pid,
 			PCN_KMSG_FROM_NID(req));
 #endif
@@ -1691,7 +1398,6 @@ static int handle_remote_page_response(struct pcn_kmsg_message *msg)
 #ifdef CONFIG_POPCORN_HYPE
 	static unsigned long pg_response_cnt = 0;
 	unsigned long pg_response_thre;
-	//struct task_struct *tsk = __get_task_struct(res->remote_pid);
 	pg_response_cnt++;
 	if (current->at_remote)
 		pg_response_thre = REMOTE_PGFAULT_SKIP;
@@ -1700,7 +1406,7 @@ static int handle_remote_page_response(struct pcn_kmsg_message *msg)
 
 	if ((pg_response_cnt > pg_response_thre) &&
 		NOTINTERESTED_GVA(res->addr)) {
-		PGPRINTK("  [%d] <-[%d/%d] %lx %x\n", // TODO make sure I can see it
+		PGPRINTK("  [%d] <-[%d/%d] %lx %x\n",
 				ws->pid, res->remote_pid, PCN_KMSG_FROM_NID(res),
 				res->addr, res->result);
 	}
@@ -1750,39 +1456,7 @@ static int __request_remote_page(struct task_struct *tsk, int from_nid, pid_t fr
 		req->rdma_key = 0;
 	}
 
-#ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_CHECK_SANITY
-	if (!req) {
-		DDPRINTK("PROBLEMATIC ADDR [[[%lx]]]\n", addr);
-		dump_stack();
-		msleep(60*1000);
-	}
-	if (from_pid < 0 || from_nid < 0) {
-		printk(KERN_ERR "  BAD [%d] ->[%d/%d] addr %lx instr %lx\n", tsk->pid,
-							from_pid, from_nid, addr, req->instr_addr);
-		dump_stack();
-		msleep(60*1000);
-	}
-#endif
-
-	{
-		static unsigned long pg_req_cnt = 0;
-		unsigned long pg_req_thre;
-		pg_req_cnt++;
-		if (current->at_remote)
-			pg_req_thre = REMOTE_PGFAULT_SKIP;
-		else
-			pg_req_thre = ORIGIN_PGFAULT_SKIP;
-
-		if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
-			((pg_req_cnt > pg_req_thre ||
-			INTERESTED_GVA(addr)) &&
-			NOTINTERESTED_GVA(addr))) {
-			PGPRINTK("  [%d] ->[%d/%d] %lx instr %lx\n", tsk->pid,
-					from_pid, from_nid, addr, req->instr_addr);
-		}
-	}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 	PGPRINTK("  [%d] ->[%d/%d] %lx %lx\n", tsk->pid,
 			from_pid, from_nid, addr, req->instr_addr);
 #endif
@@ -1796,18 +1470,6 @@ static remote_page_response_t *__fetch_page_from_origin(struct task_struct *tsk,
 	remote_page_response_t *rp;
 	struct wait_station *ws = get_wait_station(tsk);
 	struct pcn_kmsg_rdma_handle *rh;
-
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	BUG_ON(!tsk);
-	if (tsk->origin_nid < 0 || tsk->origin_pid < 0) {
-		printk("  BAD [%d] ->[%d/%d] addr %lx instr %lx\n", tsk->pid,
-						tsk->origin_nid, tsk->origin_pid,
-						instruction_pointer(current_pt_regs()));
-		dump_stack();
-	}
-#endif
-#endif
 
 	__request_remote_page(tsk, tsk->origin_nid, tsk->origin_pid,
 			addr, fault_flags, ws->id, &rh);
@@ -1851,13 +1513,9 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 #endif
 	int page_trans = 0;
 #ifdef CONFIG_POPCORN_STAT_PGFAULTS
-	//int revoke = 0;
 	ktime_t fp_start;
 	if (local_origin) /* aka !pg_mine */
 		fp_start = ktime_get();
-#endif
-#ifdef CONFIG_POPCORN_HYPE
-//reclaimrpg: /* not used now return to outside and retry outside to release fh & ptl*/
 #endif
 	BUG_ON(!pip);
 
@@ -1871,8 +1529,7 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 	/* no longer need this since I put retry outside this function */
 	if (!origin_retry) {
 		page_server_panic(peers == 0, mm, addr, NULL, __pte(0));
-	} // else { DON'T LET RETY CHECK PANIC }
-	else {
+	} else {
 		printk(" [%d] %lx peers==0 (%s) pte_flags(__pte(0)) %lx "
 				"from_nid %d RETRY#%d\n",
 				tsk->pid, addr,
@@ -1939,12 +1596,7 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 		flush_dcache_page(page);
 		__SetPageUptodate(page);
 		page_trans = 1;
-#ifdef CONFIG_POPCORN_STAT_PGFAULTS
-		//page_trans = 1; // TODO have a look
-#endif
 	}
-	//pcn_kmsg_done(rp);
-	//if (rh) pcn_kmsg_unpin_rdma_buffer(rh);
 
 #ifdef CONFIG_POPCORN_HYPE
 	if (!my_nid && /* origin */
@@ -1964,10 +1616,6 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 			set_bit(from_nid, pi);
 		}
 
-		//schedule(); // testing
-		//udelay(100); // good
-		//BUG_ON(++origin_retry > RETRY_ORIGINFAULT_AT_ORIGIN);
-		//goto reclaimrpg;
 		ret = HYPE_RETRY;
 	}
 #endif
@@ -1978,8 +1626,6 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 	kunmap(pip);
 
 #ifdef CONFIG_POPCORN_STAT_PGFAULTS
-	//if (!my_nid && local_origin && !revoke && page_trans) {
-	//if (!my_nid && local_origin && page_trans) {
 	if (!my_nid && local_origin) {
 		if (fault_for_write(fault_flags)) { /* page + inv */
 			ktime_t dt, fp_end = ktime_get();
@@ -1987,17 +1633,11 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 			atomic64_add(ktime_to_ns(dt), &fpin_ns);
 			atomic64_inc(&fpin_cnt);
 		} else { /* page + !inv  */
-		//if (page_trans) {
 			ktime_t dt, fp_end = ktime_get();
 			dt = ktime_sub(fp_end, fp_start);
 			atomic64_add(ktime_to_ns(dt), &fp_ns);
 			atomic64_inc(&fp_cnt);
-		//}
 		}
-
-		///* Jack: DON'T CATCH FOR HYPE_RETRY release all locks outside */
-		//if (!page_trans)
-		//	BUG_ON("!pg_mine must transfer page");
 	}
 #endif
 #ifdef CONFIG_POPCORN_HYPE
@@ -2128,21 +1768,6 @@ static int __handle_remotefault_at_remote(struct task_struct *tsk, struct mm_str
 
 	struct fault_handle *fh;
 	bool leader;
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	/* debug */
-	static unsigned long process_rr_cnt = 0;
-	unsigned long process_rr_thre;
-	process_rr_cnt++;
-	process_rr_thre = PGFAULT_REQ_AT_REMOTE_SKIP;
-	if (process_rr_cnt > process_rr_thre) {
-		PGPRINTK("  rr1[%d] %lx %c %lx from [%d/%d]\n",
-				req->remote_pid, req->addr,
-				fault_for_write(req->fault_flags) ? 'W' : 'R',
-				req->instr_addr, req->origin_pid, PCN_KMSG_FROM_NID(req));
-	}
-#endif
-#endif
 	pte = __get_pte_at(mm, addr, &pmd, &ptl);
 	if (!pte) {
 		PGPRINTK("  [%d] No PTE!!\n", tsk->pid);
@@ -2150,16 +1775,6 @@ static int __handle_remotefault_at_remote(struct task_struct *tsk, struct mm_str
 	}
 
 	spin_lock(ptl);
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	if (process_rr_cnt > process_rr_thre) {
-		PGPRINTK("  rr2[%d] %lx %c %lx from [%d/%d]\n",
-				req->remote_pid, req->addr,
-				fault_for_write(req->fault_flags) ? 'W' : 'R',
-				req->instr_addr, req->origin_pid, PCN_KMSG_FROM_NID(req));
-	}
-#endif
-#endif
 	fh = __start_fault_handling(tsk, addr, fault_flags, ptl, &leader);
 	if (!fh) {
 		pte_unmap(pte);
@@ -2174,28 +1789,8 @@ static int __handle_remotefault_at_remote(struct task_struct *tsk, struct mm_str
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 	BUG_ON(!page_is_mine(mm, addr));
 #endif
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	if (process_rr_cnt > process_rr_thre) {
-		PGPRINTK("  rr3[%d] %lx %c %lx from [%d/%d]\n",
-				req->remote_pid, req->addr,
-				fault_for_write(req->fault_flags) ? 'W' : 'R',
-				req->instr_addr, req->origin_pid, PCN_KMSG_FROM_NID(req));
-	}
-#endif
-#endif
 
 	spin_lock(ptl);
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	if (process_rr_cnt > process_rr_thre) {
-		PGPRINTK("  rr4[%d] %lx %c %lx from [%d/%d]\n",
-				req->remote_pid, req->addr,
-				fault_for_write(req->fault_flags) ? 'W' : 'R',
-				req->instr_addr, req->origin_pid, PCN_KMSG_FROM_NID(req));
-	}
-#endif
-#endif
 	SetPageDistributed(mm, addr);
 	entry = ptep_clear_flush(vma, addr, pte);
 
@@ -2229,16 +1824,6 @@ static int __handle_remotefault_at_remote(struct task_struct *tsk, struct mm_str
 		kunmap_atomic(paddr);
 	}
 
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	if (process_rr_cnt > process_rr_thre) {
-		PGPRINTK("  rr5[%d] %lx %c %lx from [%d/%d]\n",
-				req->remote_pid, req->addr,
-				fault_for_write(req->fault_flags) ? 'W' : 'R',
-				req->instr_addr, req->origin_pid, PCN_KMSG_FROM_NID(req));
-	}
-#endif
-#endif
 	__finish_fault_handling(fh);
 	return 0;
 }
@@ -2275,10 +1860,7 @@ again:
 	if (pte_none(*pte)) {
 		int ret;
 		spin_unlock(ptl);
-#ifdef CONFIG_POPCORN_HYPE
-		/* Too many so commented out */
-		//PGPRINTK("  [%d] handle local fault at origin\n", tsk->pid);
-#else
+#ifndef CONFIG_POPCORN_HYPE
 		PGPRINTK("  [%d] handle local fault at origin\n", tsk->pid);
 #endif
 		ret = handle_pte_fault_origin(mm, vma, addr, pte, pmd, fault_flags);
@@ -2312,28 +1894,7 @@ again:
 		/* Prepare the page if it is not mine. This should be leader */
 		pte_t entry;
 
-#ifdef CONFIG_POPCORN_HYPE
-	{
-		static unsigned long remote_at_origin_cnt = 0;
-		unsigned long remote_at_origin_thre;
-		remote_at_origin_cnt++;
-		if (current->at_remote)
-			remote_at_origin_thre = REMOTE_PGFAULT_SKIP;
-		else
-			remote_at_origin_thre = ORIGIN_PGFAULT_SKIP;
-
-		//if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
-		if (pophype_debug ||
-			((remote_at_origin_cnt > remote_at_origin_thre ||
-			INTERESTED_GVA(addr)) &&
-			NOTINTERESTED_GVA(addr))) {
-			//PGPRINTK("\t\t\t =[%d] %s%s %p %s\n",
-			//	tsk->pid, page_is_mine(mm, addr) ? "origin " : "",
-			//	test_page_owner(from_nid, mm, addr) ? "remote": "", fh,
-			//	fault_for_write(fault_flags) ? "INV" : "");
-		}
-	}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 		PGPRINTK("\t\t =[%d] %s%s %p\n",
 				tsk->pid, page_is_mine(mm, addr) ? "origin " : "",
 				test_page_owner(from_nid, mm, addr) ? "remote": "", fh);
@@ -2344,7 +1905,6 @@ again:
 			grant = true;
 		} else {
 			if (!page_is_mine(mm, addr)) {
-				//BUG_ON("rr: 2-node case will never happen");
 				int r = __claim_remote_page(tsk, mm, vma, addr, fault_flags, page, 0);
 #if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_CHECK_SANITY)
 				BUG_ON(r == HYPE_RETRY);
@@ -2417,7 +1977,6 @@ static void process_remote_page_request(struct work_struct *work)
 	enum pcn_kmsg_type res_type;
 	int down_read_retry = 0;
 #ifdef CONFIG_POPCORN_HYPE
-	/* debug */
 	static unsigned long process_remote_cnt = 0;
 	unsigned long process_remote_thre;
 #endif
@@ -2442,7 +2001,6 @@ again:
 	mm = get_task_mm(tsk);
 
 #ifdef CONFIG_POPCORN_HYPE
-	/* debug */
 	process_remote_cnt++;
 	if (tsk->at_remote)
 		process_remote_thre = PGFAULT_REQ_AT_REMOTE_SKIP;
@@ -2468,14 +2026,7 @@ again:
 #endif
 
 	while (!down_read_trylock(&mm->mmap_sem)) {
-#ifdef CONFIG_POPCORN_HYPE
-		//BUG_ON(down_read_retry > 20);
-#endif
-//#ifdef CONFIG_POPCORN_HYPE
-//		if (down_read_retry++ > 4) { /* who hold it at remote? */
-//#else
 		if (!tsk->at_remote && down_read_retry++ > 4) {
-//#endif
 			res->result = VM_FAULT_RETRY;
 			goto out_up;
 		}
@@ -2484,25 +2035,19 @@ again:
 			/* ORIGIN IS SURE THAT THIS REMOTE HAS THE PAGE and MUST FIX IT.
 			   That's the current request from this remote at remote should
 				return a retry to this remote so that this remote
-				can handle origin's works first*/
+				can handle origin's works first */
 			down_read_retry++;
 		}
-		//BUG() // 0x7ffec1a0c000
-		// from origin __claim_remote_page -> __request_remote_page
-		// from remote  __fetch_page_from_origin -> __request_remote_page
-		//Jack for the speed
 		if (!(down_read_retry % (RETRY_REMOTEFAULT / 10))) {
 			if (NOTINTERESTED_GVA(req->addr)) {
 				PGPRINTK("\t\t [%d] mmlk %lx by[%d/%ld] retry#%d "
 						"MINE %s letbugatorigin %s\n",
-						//"in_atomic() %s\n",
 						req->remote_pid, req->addr,
 						mm->mmap_sem.owner ? mm->mmap_sem.owner->pid : -78,
 						mm->mmap_sem.count,
 						down_read_retry,
 						page_is_mine(mm, req->addr) ? "O" : "X",
 						RETRY_REMOTEFAULT_GIVEUP ? "O" : "X");
-						//in_atomic() ? "O" : "X");
 			}
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 			BUG_ON(in_atomic());
@@ -2518,22 +2063,19 @@ again:
 				"since this is just a rr case isn't it?\n\n\n",
 				tsk->pid, req->remote_pid, from_nid, req->addr,
 				fault_for_write(req->fault_flags) ? 'W' : 'R', req->instr_addr);
-			//dump_stack();
-			//BUG();
 		}
 #endif
 #endif
 
 		if (tsk->at_remote && down_read_retry > RETRY_REMOTEFAULT) {
 			if (RETRY_REMOTEFAULT_GIVEUP) {
-			/* Remote should not return RETRY but.....let's BUG() at origin */
+				/* Remote should not return RETRY but...let's BUG() at origin */
 				res->result = VM_FAULT_RETRY;
 				goto out_up; /* correct */
 			}
 		}
 #endif
 		/* retrying */
-		//udelay(100);
 		io_schedule();
 	}
 	vma = find_vma(mm, req->addr);
@@ -2717,17 +2259,6 @@ static int __handle_localfault_at_remote(struct mm_struct *mm,
 	ktime_t dt, inv_end, inv_start;
 #endif
 
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	if (addr == 0x7ffff4fdd000) {
-		printk("%s(): jack %p %p "
-				"(I think we didn't have DSM working for this resion "
-				"so this is the problem)\n",
-				__func__, vma->vm_ops, vma->vm_ops->fault);
-	}
-#endif
-#endif
-
 	if (anon_vma_prepare(vma)) {
 		BUG_ON("Cannot prepare vma for anonymous page");
 		pte_unmap(pte);
@@ -2814,17 +2345,6 @@ static int __handle_localfault_at_remote(struct mm_struct *mm,
 	fp_start = fpin_start = inv_start = ktime_get();
 #endif
 
-#if 0
-#ifdef CONFIG_POPCORN_HYPE
-	BUG_ON(!current);
-	if (current->origin_nid < 0 || current->origin_pid < 0) {
-		printk("  BAD [%d] ->[%d/%d] addr %lx instr %llx\n", current->pid,
-				current->origin_nid, current->origin_pid,
-				instruction_pointer(current_pt_regs()));
-		dump_stack();
-	}
-#endif
-#endif
 	rp = __fetch_page_from_origin(current, vma, addr, fault_flags, page);
 
 #ifdef CONFIG_POPCORN_STAT_PGFAULTS
@@ -2861,20 +2381,7 @@ static int __handle_localfault_at_remote(struct mm_struct *mm,
 
 	if (rp->result && rp->result != VM_FAULT_CONTINUE) {
 		if (rp->result != VM_FAULT_RETRY) {
-#ifdef CONFIG_POPCORN_HYPE
-			printk("  $$[%d] 0x%lx failed ret 0x%x TODO\n",
-							current->pid, addr, rp->result);
-			printk("  $$[%d] 0x%lx failed ret 0x%x TODO\n",
-							current->pid, addr, rp->result);
-			printk("  $$[%d] 0x%lx failed ret 0x%x TODO\n",
-							current->pid, addr, rp->result);
-			//printk("  $$[%d] failed 0x%x\n", current->pid, rp->result);
-			if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
-				(INTERESTED_GVA(addr) && NOTINTERESTED_GVA(addr))) {
-				printk("  $$[%d] 0x%lx failed ret 0x%x TODO\n",
-								current->pid, addr, rp->result);
-			}
-#else
+#ifndef CONFIG_POPCORN_HYPE
 			PGPRINTK("  [%d] failed 0x%x\n", current->pid, rp->result);
 #endif
 		}
@@ -2883,7 +2390,6 @@ static int __handle_localfault_at_remote(struct mm_struct *mm,
 			DSMRETRYPRINTK("  !![%d] fpfo->lfr 0x%lx ret 0x%x "
 							"[[[ RETRY UNLOCKED ]]]\n",
 							current->pid, addr, rp->result);
-			// remote
 		}
 		/* eighter RETRY or FAIL - UNLOCK */
 #endif
@@ -2891,26 +2397,6 @@ static int __handle_localfault_at_remote(struct mm_struct *mm,
 		ret = rp->result;
 		pte_unmap(pte);
 		up_read(&mm->mmap_sem);
-#ifdef CONFIG_POPCORN_HYPE
-		/* Handled outside */
-		/* TODO  HYPE - BUG: bad unlock balance detected! 0521
-			VM_FAULT_KILLED
-				//VM_FAULT_RETRY
-					err VM_FAULT_FALLBACK
-
-			VM_FAULT_LOCKED
-			VM_FAULT_NOPAGE
-					err VM_FAULT_SIGSEGV
-					err VM_FAULT_HWPOISON_LARGE
-					err VM_FAULT_HWPOISON
-
-			ERR
-			(VM_FAULT_OOM | VM_FAULT_SIGBUS | VM_FAULT_SIGSEGV | \
-			 VM_FAULT_HWPOISON | VM_FAULT_HWPOISON_LARGE | \
-						  VM_FAULT_FALLBACK)
-		*/
-		/* do I handle this RETRY WELL? */
-#endif
 		goto out_free;
 	}
 
@@ -2950,8 +2436,6 @@ static int __handle_localfault_at_remote(struct mm_struct *mm,
 	set_page_owner(my_nid, mm, addr);
 	pte_unmap_unlock(pte, ptl);
 	ret = 0;	/* The leader squashes both 0 and VM_FAULT_CONTINUE to 0 */
-//	dsm_traffic_collect(address, addr,
-//			fault_for_write(fault_flags) ? 'W' : 'R'); /* pophype */
 
 out_free:
 	put_page(page);
@@ -2977,7 +2461,7 @@ static bool __handle_copy_on_write(struct mm_struct *mm,
 			addr, vma->vm_start, vma->vm_end);
 		dump_stack();
 		return false; /* hacking: dealing with rw-s files
-				anon_inode:kvm-vcpu:0, /[aio] (deleted), /dev/zero (deleted) */
+			anon_inode:kvm-vcpu:0, /[aio] (deleted), /dev/zero (deleted) */
 	}
 #else
 	BUG_ON(vma->vm_flags & VM_SHARED);
@@ -3019,10 +2503,6 @@ static int __handle_localfault_at_origin(struct mm_struct *mm,
 
 	struct fault_handle *fh;
 	bool leader;
-#ifdef CONFIG_POPCORN_STAT_PGFAULTS
-	bool remote_fault = false;
-	//ktime_t ptef_start = ktime_get();
-#endif
 #ifdef CONFIG_POPCORN_HYPE
 	unsigned long lfal_retry_cnt = 0;
 	int ret;
@@ -3135,7 +2615,7 @@ lfal_retry:
 		/* !page_mine must transffer */
 		if (ret == HYPE_RETRY) {
 			pte_unmap(pte);
-			goto out_wakeup; // aka origin_retry_out // don't change pte
+			goto out_wakeup; /* aka origin_retry_out - don't change pte */
 		}
 #else
 		__claim_remote_page(current, mm, vma, addr, fault_flags, page, 1);
@@ -3146,7 +2626,6 @@ lfal_retry:
 		dt = ktime_sub(clr_end, clr_start);
 		atomic64_add(ktime_to_ns(dt), &clr_ns);
 		atomic64_inc(&clr_cnt);
-		remote_fault = true;
 #endif
 
 		spin_lock(ptl);
@@ -3156,25 +2635,13 @@ lfal_retry:
 	BUG_ON(!test_page_owner(my_nid, mm, addr));
 #endif
 	pte_unmap_unlock(pte, ptl);
-//	dsm_traffic_collect(address, addr, /* pophype */
-//			fault_for_write(fault_flags) ? 'W' : 'R');
 
 out_wakeup:
 	__finish_fault_handling(fh);
 
-#ifdef CONFIG_POPCORN_STAT_PGFAULTS
-	if (remote_fault) {
-		//ktime_t dt, ptef_end = ktime_get();
-		//dt = ktime_sub(ptef_end, ptef_start);
-		//atomic64_add(ktime_to_ns(dt), &ptef_ns);
-		//atomic64_inc(&ptef_cnt);
-	}
-#endif
-
 #ifdef CONFIG_POPCORN_HYPE
 #ifdef CONFIG_POPCORN_STAT
 	if (ret == HYPE_RETRY) {
-		//udelay(100);
 		lfal_retry_cnt++;
 		g_lfal_retry_cnt++;
 		goto lfal_retry;
@@ -3222,17 +2689,11 @@ int page_server_handle_pte_fault(
 			|| INTERESTED_GVA(addr)) &&
 			NOTINTERESTED_GVA(addr))) {
 
-// 11/05/19 uncommented
-//			if (pophype_debug || INTERESTED_GVA_2AFTER4(addr) ||
-//				INTERESTED_GVA(addr))
-//				goto force_pk;
-
 			if (((((addr >> PAGE_SHIFT) >> 16) >> 8) & 0xfff) == 0x7ff) {
 				if ((((addr >> PAGE_SHIFT) >> 16) & 0xff) != 0xec) {
 					goto skip_printk; /* lose info but fast */
 				}
 			}
-//force_pk:
 			PGPRINTK("\n\t## PAGEFAULT [%d] %lx %c %lx %x %lx %s%p #%lu\n",
 					current->pid, address,
 					fault_for_write(fault_flags) ? 'W' : 'R',
@@ -3311,10 +2772,6 @@ skip_printk:
 			PGPRINTK("  [%d] VM_VCPU. locally file-mmapped shared. continue "
 					"vma->vm_ops %p popcorn_vcpu_op %p\n",
 					current->pid, vma->vm_ops, popcorn_vcpu_op);
-			/* debug */
-			if (!popcorn_vcpu_op || (vma->vm_ops != popcorn_vcpu_op))  {
-				POP_PK("\t\tThis I'm NOT interested!!!\n");
-			}
 			ret = VM_FAULT_CONTINUE;
 			goto out;
 		}
@@ -3341,10 +2798,6 @@ skip_printk:
 	ret = 0;
 
 out:
-////	if (!current->at_remote)
-////		dsm_traffic_collect(address, addr,
-////				fault_for_write(fault_flags) ? 'W' : 'R');
-
 	trace_pgfault(my_nid, current->pid,
 			fault_for_write(fault_flags) ? 'W' : 'R',
 			instruction_pointer(current_pt_regs()), addr, ret);
@@ -3383,49 +2836,5 @@ int __init page_server_init(void)
 	__fault_handle_cache = kmem_cache_create("fault_handle",
 			sizeof(struct fault_handle), 0, 0, NULL);
 
-#if POPHYPE_HOST_KERNEL /* guest mem is on host, so don't waste */
-#if 0
-//	for (i = 0; i < dsm_traffic_pg_cnt; i++) {
-//		for (j = 0; j < dsm_traffic_inst_cnt; j++) {
-//			dsm_traffic[i][j].addr = 0;
-//			dsm_traffic[i][j].inst = 0;
-//			dsm_traffic[i][j].cnt = 0;
-//		}
-//	}
-	/*
-	 * dsm_traffic[ptr list]		-> [ptr list]		-> [real content]
-	 * [dsm_traffic_pg_cnt]	* [dsm_traffic_inst_cnt]
-	 *									* [dsm_traffic_inst_cnt * dsm_traffic_t]
-	 */
-	printk("Pophype: debug dsm_traffic init %lu MB init (takes a while...)\n",
-				(sizeof(dsm_traffic_t) * dsm_traffic_rsp_cnt *
-				dsm_traffic_inst_cnt * dsm_traffic_pg_cnt) / 1024 / 1024);
-	printk("Pophype: dsm_traffic %lu * %lu * %lu * %lu B\n",
-				sizeof(dsm_traffic_t), dsm_traffic_rsp_cnt,
-				dsm_traffic_inst_cnt, dsm_traffic_pg_cnt);
-	//dsm_traffic = kzalloc(dsm_traffic_pg_cnt * sizeof(void*), GFP_KERNEL);
-	//dsm_traffic = kzalloc(sizeof(dsm_traffic_t) *
-	//				dsm_traffic_inst_cnt * dsm_traffic_rsp_cnt, GFP_KERNEL);
-	dsm_traffic = kzalloc(sizeof(void *) *
-						dsm_traffic_pg_cnt, GFP_KERNEL);
-	BUG_ON(!dsm_traffic);
-	for (i = 0; i < dsm_traffic_pg_cnt; i++) {
-		//dsm_traffic[i] = (struct dsm_pgfault *)
-		//	kzalloc(sizeof(struct dsm_pgfault) *
-		//								dsm_traffic_inst_cnt, GFP_KERNEL);
-		dsm_traffic[i] = (dsm_traffic_t **)
-				kzalloc(sizeof(void *) * dsm_traffic_inst_cnt, GFP_KERNEL);
-			//kzalloc(sizeof(dsm_traffic_t) *
-			//							dsm_traffic_inst_cnt, GFP_KERNEL);
-		BUG_ON(!dsm_traffic[i]);
-		for (j = 0; j < dsm_traffic_inst_cnt; j++) {
-			dsm_traffic[i][j] = (dsm_traffic_t *)
-				kzalloc(sizeof(dsm_traffic_t) *
-											dsm_traffic_rsp_cnt, GFP_KERNEL);
-			BUG_ON(!dsm_traffic[i][j]);
-		}
-	}
-#endif
-#endif
 	return 0;
 }
