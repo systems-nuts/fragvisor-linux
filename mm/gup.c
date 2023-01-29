@@ -17,7 +17,7 @@
 #include <asm/tlbflush.h>
 
 #ifdef CONFIG_POPCORN
-#define HYPE_GUP_RETRY 1 // BUG......
+#define HYPE_GUP_RETRY 1
 #include <popcorn/process_server.h>
 #include <popcorn/vma_server.h>
 #include <popcorn/page_server.h>
@@ -318,63 +318,22 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 	unsigned int fault_flags = 0;
 	int ret;
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* lkvm interested cases
-		1st __gfn_to_pfn_memslot/ hva_to_pfn path:
-			vmas: NULL, nonblocking(locked): NULL
-				gup_flags: FOLL_TOUCH | FOLL_NOWAIT |
-							FOLL_HWPOISON | FOLL_GET | (FOLL_WRITE)
-
-		2nd __gfn_to_pfn_memslot/ hva_to_pfn path:
-					vmas: NULL, *nonblocking(*locked): 1
-					gup_flags = FOLL_TOUCH | FOLL_HWPOISON (from the topest)
-								FOLL_GET | (FOLL_WRITE)
-
-		Diff: 1st is FOLL_NOWAIT, 2nd is !FOLL_NOWAIT
-			1st nonblocking(locked): NULL 2nd *nonblocking(*locked): 1
-	*/
-#endif
-
 	/* mlock all present pages, but do not fault in new pages */
 	if ((*flags & (FOLL_POPULATE | FOLL_MLOCK)) == FOLL_MLOCK)
 		return -ENOENT;
 	if (*flags & FOLL_WRITE)
 		fault_flags |= FAULT_FLAG_WRITE;
 	if (nonblocking) {
-#ifdef CONFIG_POPCORN_HYPE
-		/* 1st NULL 2nd *nonblocking 1 2nd-2 NULL*/
-#endif
 		fault_flags |= FAULT_FLAG_ALLOW_RETRY;
 	}
 	if (*flags & FOLL_NOWAIT)
 		fault_flags |= FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_RETRY_NOWAIT;
 	if (*flags & FOLL_TRIED) {
-#ifdef CONFIG_POPCORN_HYPE
-		/* 2nd-2 case meaning 2nd failed....and now retrying */
-#endif
 		VM_WARN_ON_ONCE(fault_flags & FAULT_FLAG_ALLOW_RETRY);
 		fault_flags |= FAULT_FLAG_TRIED;
 	}
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* aka handle_pte_fault(dsm) return directly */
-	/* HOOK WITH DSM */
-	// __get_user_pages -> (faultin_page) -> __handle_mm_fault ->
-	//		handle_pte_fault -> page_server_handle_pte_fault
-#endif
 	ret = handle_mm_fault(mm, vma, address, fault_flags);
-#ifdef CONFIG_POPCORN_HYPE
-	if (tsk) {
-		if (distributed_process(tsk)) {
-			//if ((address & 0xffff000) == 0x1c75 ||
-			//	(address & 0xffff000) == 0x1f1b) {
-			if (INTERESTED_GVA(address)) {
-				//printk("\t\t\t%s(): pophype %lx ret %lx\n",
-				//				__func__, address, (long)ret);
-			}
-		}
-	}
-#endif
 	if (ret & VM_FAULT_ERROR) {
 #ifdef CONFIG_POPCORN_HYPE
 		if (tsk) {
@@ -401,15 +360,11 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 	}
 
 	if (ret & VM_FAULT_RETRY) {
-#ifdef CONFIG_POPCORN_HYPE
-		/* Can be local RETRY=(DSM CONTINU + local RETRY) or DSM RETRY */
-#endif
 		if (nonblocking) {
 #ifdef CONFIG_POPCORN_HYPE
 			/* 1st NULL 2nd *nonblocking 1 2nd-2 NULL*/
 			BUG_ON(distributed_process(tsk));
 			/* =*locked */
-			/* TODO 0526 not sure but testing */
 			*nonblocking = 0;
 #else
 			*nonblocking = 0;
@@ -421,29 +376,18 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 				EPTVVPRINTK("%s(): @@ [%d] %lx HYPE_RETRY (for debug)\n",
 											__func__, tsk->pid, address);
 				/* POPCRON DSM RETRY ALSO SHARE THIS (*locked|*nonblocking=0) */
-
 				/* if from caller, defaultly *nonblocking(locked)=1 or
 														!nonblocking */
-
 				/* debuggin fore reasons */
 				if (!(ret & VM_FAULT_HYPE_RETRY) && (ret & VM_FAULT_RETRY)) {
 					printk("%s(): @@ $$[%d] %lx $$VM_FAULT_RETRY$$ locally$$$$$ "
 										"r 0x%x (for debug)\n",
 										__func__, tsk->pid, address, ret);
 				}
-//				else if ((ret & VM_FAULT_HYPE_RETRY) &&
-//							(ret & VM_FAULT_RETRY)) {
-//					printk("%s(): @@ [%d] %lx "
-//							//"VM_FAULT_HYPE_RETRY a super set of VM_FAULT_RETRY "
-//							"r 0x%x from DSM RETRY\n",
-//							__func__, tsk->pid, address, ret);
-//				}
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 				/* impossible */
 				BUG_ON((ret & VM_FAULT_HYPE_RETRY) && !(ret & VM_FAULT_RETRY));
 #endif
-
-				// DEBUG
 				if (ret & VM_FAULT_LOCKED) {
 					printk("%s(): @@ !![%d] %lx $$VM_FAULT_LOCKED$$ "
 										"r 0x%x (for debug)\n",
@@ -630,27 +574,9 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 	int iter = 0;
 	unsigned long gup_retry = 0;
 	unsigned long retry_itself = 0;
-//	unsigned long pophype_dsm_retry = 0;
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 	unsigned long old_start = start;
 #endif
-	/* lkvm interested cases
-		1st __gfn_to_pfn_memslot/ hva_to_pfn path:
-			vmas: NULL, nonblocking(locked): NULL
-				gup_flags: FOLL_TOUCH | FOLL_NOWAIT |
-							FOLL_HWPOISON | FOLL_GET | (FOLL_WRITE)
-
-		2nd __gfn_to_pfn_memslot/ hva_to_pfn path:
-					vmas: NULL, *nonblocking(*locked): 1
-					gup_flags = FOLL_TOUCH | FOLL_HWPOISON (from the topest)
-								FOLL_GET | (FOLL_WRITE)
-
-		Diff 1st FOLL_NOWAIT 2nd !FOLL_NOWAIT
-			1st nonblocking(locked): NULL 2nd *nonblocking(*locked): 1
-
-		!!!!!2nd-2 (similar to 1 but flag)
-				vmas: NULL nonblocking: NULL *gup_flags | FOLL_TRIED*
-	*/
 #endif
 
 	if (!nr_pages)
@@ -661,7 +587,6 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 #ifdef CONFIG_POPCORN_HYPE
 	if (tsk)
 		if (distributed_process(tsk)) {
-			//BUG_ON(nr_pages > 1);
 			WARN_ON(nr_pages > 1); /* happens when memcached - concurrent large -reqs */
 		}
 #endif
@@ -685,12 +610,9 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 #ifdef CONFIG_POPCORN
 #ifdef CONFIG_POPCORN_HYPE
 			if(tsk) {
-				//if (distributed_remote_process(tsk)) {
 				if (distributed_process(tsk)) {
-					///* vma worker should not fault */
 					BUG_ON(tsk->is_worker);
 					if (!vma || start < vma->vm_start) {
-					//if (!vma || vma->vm_start > address)  //
 #ifdef CONFIG_POPCORN_STAT
 						printk(" $$[%d] %lx TODO - remote never touch vma - "
 								"no chance to test yet\n", tsk->pid, start);
@@ -708,19 +630,16 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 									"no chance to test yet\n", tsk->pid, start);
 #endif
 							vma = find_extend_vma(mm, start);
-							//vma = find_vma(mm, address); //
 						}
-						/* Check again */
 						if (!vma || start < vma->vm_start)
 							BUG();
-							//return -EFAULT;
 					}
 				}
 			}
 #endif
 #endif
 
-			if (!vma && in_gate_area(mm, start)) { // whether this addr is in page
+			if (!vma && in_gate_area(mm, start)) { /* whether this addr is in page */
 				int ret;
 				ret = get_gate_page(mm, start & PAGE_MASK,
 						gup_flags, &vma,
@@ -756,8 +675,7 @@ retry:
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 		if (tsk) {
 			if (distributed_process(tsk)) {
-				BUG_ON(i != 0); // we don't handle more than 1 fault
-				//BUG_ON(i != 0 || i != 1); // i will
+				BUG_ON(i != 0); /* we don't handle more than 1 fault */
 				BUG_ON(old_start != start);
 			}
 		}
@@ -789,7 +707,6 @@ retry:
 		if (tsk) {
 			if (distributed_process(tsk) && gup_retry) {
 				if (page) {
-					/* 0603 is_page - doesn't mean is_permission */
 					DSMRETRYPRINTK(" !![%d] %lx ***WATCHOUT*** "
 								"solved !page #%lu MINE %s\n",
 								tsk->pid, start, gup_retry,
@@ -828,27 +745,15 @@ retry:
 		if (!page) {
 			int ret;
 #ifdef CONFIG_POPCORN_HYPE
-//dsm_path:
-//#ifdef CONFIG_POPCORN_CHECK_SANITY
-//			if (tsk) {
-//				if (distributed_process(tsk)) {
-//					if (tsk != current) {
-//						printk(KERN_ERR " !![%d] %lx WATCHOUT current != tsk\n",
-//																tsk->pid, start);
-//						BUG();
-//					}
-//				}
-//			}
-//#endif
 			/* VM_FAULT_HYPE_RETRY debug info point */
 			if (tsk) {
 				if ((distributed_process(tsk) &&
-					//(INTERESTED_GVA(start) || tsk->at_remote)) &&
 					(INTERESTED_GVA(start))) &&
 					NOTINTERESTED_GVA(start)) {
 					/* 1 memslot 2 memslot both call it
-						asyn is not delivered to here so
-						use nonblocking to determin */
+					 * asyn is not delivered to here so
+					 * use nonblocking to determin
+					 */
 					EPTVPRINTK("\t\t=slow: (lked) __gups() %s [%d] %lx "
 							"faultin_pg nrpg(remain) %lu mine %s\n",
 							!nonblocking ?
@@ -858,24 +763,9 @@ retry:
 							page_is_mine_pub(tsk->mm, start) ? "O" : "X");
 				}
 			}
-
-			// (__get_user_pages) -> faultin_page -> __handle_mm_fault ->
-			//				handle_pte_fault -> page_server_handle_pte_fault
 #endif
 			ret = faultin_page(tsk, vma, start, &foll_flags,
 					nonblocking);
-#ifdef CONFIG_POPCORN_HYPE
-			if (tsk) {
-				if (distributed_process(tsk)) {
-					//if ((start & 0xffff000) == 0x1c75 ||
-					//	(start & 0xffff000) == 0x1f1b) {
-					if (INTERESTED_GVA(start)) {
-						//printk("\t\t\t%s(): pophype %lx ret %lx\n",
-						//				__func__, start, (long)ret);
-					}
-				}
-			}
-#endif
 			switch (ret) {
 			case 0:
 #ifdef CONFIG_POPCORN_HYPE
@@ -907,15 +797,9 @@ retry:
 #ifdef CONFIG_POPCORN_HYPE
 				/* 1st: immediately return
 					2nd: *nonblocking = 0; (set by VM_FAULT_RETRY) */
-				//if ((tsk && INTERESTED_GVA(start)) &&
 				if (tsk) {
 					if (distributed_process(tsk)) {
-						if (
-							INTERESTED_GVA(start)
-							//(INTERESTED_GVA(start) && NOTINTERESTED_GVA(start)) ||
-							//(start & 0xffff0000) == 0x1c75 ||
-							//(start & 0xffff0000) == 0x1f1b
-							) {
+						if (INTERESTED_GVA(start)) {
 							EPTVPRINTK("\t=__gups() [%d] %s %lx ret RETRY "
 								"i(succpgs) %ld HYPE_GUP_RETRY(%s) #%lu\n",
 									tsk->pid,
@@ -935,15 +819,12 @@ retry:
 				/* hype retry - faultin_page has unlocked
 						and VM_FAULT_HYPE_RETRY -> -EBUSY */
 				if (HYPE_GUP_RETRY) {
-					//if (distributed_remote_process(tsk) && // BUG
 					if (distributed_process(tsk) &&
 						/* retry for 1st - don't only retry for 2nd-1 */
 						!nonblocking &&  (!(gup_flags & FOLL_TRIED))) {
-						// =1st
 						io_schedule();
 						gup_retry++;
 						goto retry;
-						//goto dsm_path;
 					} else if (distributed_process(tsk)) {
 						printk(KERN_ERR "nonblocking %p gup_flags %x\n",
 												nonblocking, gup_flags);
@@ -1022,7 +903,6 @@ next_page:
 						i, i == 1 ? "GOOD" : "BAD", gup_retry,
 						page_is_mine_pub(tsk->mm, start - (iter * PAGE_SIZE)) ?
 																	"O" : "X");
-				// origin
 		}
 	}
 #endif
@@ -1115,15 +995,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 	long ret, pages_done;
 	bool lock_dropped;
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* lkvm interested cases = vmas: NULL notify_drop: NULL forece: 0
-				2nd __gfn_to_pfn_memslot/ hva_to_pfn path:
-					vmas: NULL, *nonblocking(*locked): 1
-					gup_flags = FOLL_TOUCH | FOLL_HWPOISON (from the topest)
-								FOLL_GET | (FOLL_WRITE)
-	*/
-#endif
-
 	if (locked) {
 		/* if VM_FAULT_RETRY can be returned, vmas become invalid */
 		BUG_ON(vmas);
@@ -1143,9 +1014,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 	for (;;) {
 		ret = __get_user_pages(tsk, mm, start, nr_pages, flags, pages,
 				       vmas, locked);
-#ifdef CONFIG_POPCORN_HYPE
-		/* faultin_page may have change locked */
-#endif
 		if (!locked) {
 #ifdef CONFIG_POPCORN_HYPE
 			if (tsk) {
@@ -1158,9 +1026,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 
 		/* VM_FAULT_RETRY cannot return errors */
 		if (!*locked) {
-#ifdef CONFIG_POPCORN_HYPE
-			/* nice check for us */
-#endif
 			BUG_ON(ret < 0);
 			BUG_ON(ret >= nr_pages);
 		}
@@ -1233,15 +1098,11 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 		if (tsk) {
 			if (distributed_process(tsk)) {
 				BUG_ON(ret); /* we only support 1 page */
-				//if ((tsk &&
-					//INTERESTED_GVA(start)) &&
-					//NOTINTERESTED_GVA(start) {
 				EPTVPRINTK("\t=__gups() $$[%d] =2nd-2 [[LOCKED]] %lx faultin_pg "
 						"nrpg(remain) %lu mine %s (TODO) pages_done %ld\n",
 						tsk->pid, start, nr_pages,
 						page_is_mine_pub(tsk->mm, start) ? "O" : "X",
 						pages_done);
-				//}
 			}
 		}
 #endif
@@ -1250,7 +1111,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 		if (ret != 1) {
 			BUG_ON(ret > 1);
 #ifdef CONFIG_POPCORN_HYPE
-			/* Jack have a look */
 			/* ret = 0 because of RETRY */
 			/* I guess pages_done is 0 ret is 0 so return 0 */
 			if (distributed_process(tsk)) {
@@ -1269,12 +1129,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 		pages++;
 		start += PAGE_SIZE;
 	}
-#ifdef CONFIG_POPCORN_HYPE
-	/* I guess pages_done is 0 ret is 0 so return 0 now back to 2nd argvs
-			notify_drop: false,
-			lock_dropped: true (sinde 2nd-2), *locked: 1 (sinde 2nd-2)
-								so this lock will be unlocked outside */
-#endif
 	if (notify_drop && lock_dropped && *locked) {
 		/*
 		 * We must let the caller know we temporarily dropped the lock
@@ -1284,7 +1138,6 @@ static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 		*locked = 0;
 #ifdef CONFIG_POPCORN_HYPE
 		if (distributed_process(tsk)) {
-			//if ((tsk && (INTERESTED_GVA(start) || tsk->at_remote)) &&
 			if ((tsk && (INTERESTED_GVA(start))) &&
 				NOTINTERESTED_GVA(start)) {
 				EPTVPRINTK("\t=__gups() $$[%d] =2nd [[UNLOCKED]] %lx faultin_pg "
@@ -1348,16 +1201,6 @@ __always_inline long __get_user_pages_unlocked(struct task_struct *tsk, struct m
 	long ret;
 	int locked = 1; /* lkvm interested */
 	down_read(&mm->mmap_sem);
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(tsk)) {
-		//if ((tsk && (INTERESTED_GVA(start) || tsk->at_remote)) &&
-		//	NOTINTERESTED_GVA(start)) {
-			EPTVPRINTK("\t=__gups() [%d] =2nd async(NULL) [[[LOCKed]]] "
-												"addr %lx locked 1\n",
-													tsk->pid, start);
-		//}
-	}
-#endif
 	ret = __get_user_pages_locked(tsk, mm, start, nr_pages, write, force,
 				      pages, NULL, &locked, false, gup_flags);
 #ifdef CONFIG_POPCORN_HYPE
@@ -1372,30 +1215,14 @@ __always_inline long __get_user_pages_unlocked(struct task_struct *tsk, struct m
 		up_read(&mm->mmap_sem);
 #ifdef CONFIG_POPCORN_HYPE
 		if (distributed_process(tsk)) {
-			//if ((tsk && (INTERESTED_GVA(start) || tsk->at_remote)) &&
-			//	NOTINTERESTED_GVA(start)) {
-//				EPTVPRINTK("\t=__gups() [%d] =2nd UNLOCKED %lx faultin_pg "
-//							"nrpg(remain) %lu mine %s\n",
-//							tsk->pid, start, nr_pages,
-//							page_is_mine_pub(tsk->mm, start) ? "O" : "X");
-				/* 0519 someone up_read again */
-				/* right after got sipi 7ffff4fe400 from kvm_vcpu_reload_apic_access_page() */
-				EPTVPRINTK("\t=__gups() $$[%d] =2nd async(NULL) "
-						"locked %d %s [[[UNLOCKed]]] addr %lx ret %ld\n",
-						tsk->pid, locked, locked ? "=>" : "!=>", start, ret);
-				//dump_stack();
-			//}
+			EPTVPRINTK("\t=__gups() $$[%d] =2nd async(NULL) "
+					"locked %d %s [[[UNLOCKed]]] addr %lx ret %ld\n",
+					tsk->pid, locked, locked ? "=>" : "!=>", start, ret);
 			BUG_ON(ret != 1 && "if so, handle it"); /* This is another general
 										place to solve pophype dsm shortage */
 		}
 #endif
 	}
-//#ifdef CONFIG_POPCORN_HYPE
-//	if (tsk->at_remote) {
-//		EPTVPRINTK("%s(): [%d] no async [[[UNLOCKed]]] mmap_sem addr %lx locked %d\n",
-//							__func__, tsk->pid, start, locked);
-//	}
-//#endif
 	return ret;
 }
 
@@ -2058,7 +1885,6 @@ int get_user_pages_fast(unsigned long start, int nr_pages, int write,
 				POP_PK("pophype: my sol %d/%d\n", cnt, nr_pages - nr);
 				ret = get_user_pages_unlocked(current, mm, start,
 												  1, write, 0, pages);
-				/* TODO: what should I do for ret and nr_pages & nr !!!! TODO */
 				cnt--;
 			}
 
