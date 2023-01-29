@@ -42,17 +42,16 @@
 #include <asm/io.h>
 #include <asm/vmx.h>
 
-
 #ifdef CONFIG_POPCORN_HYPE
-//#include "trace.h"
 #include "../../../kernel/popcorn/trace_events.h"
 #include <popcorn/types.h>
 #include <popcorn/page_server.h>
 #include <popcorn/hype_kvm.h>
-#define ORIGIN_DMAP_SKIP_CNT 45800 // 45933
+#define ORIGIN_DMAP_SKIP_CNT 45800
 #define REMOTE_DMAP_SKIP_CNT 0
 extern bool pophype_debug;
 #endif
+
 /*
  * When setting this variable to true it enables Two-Dimensional-Paging
  * where the hardware walks 2 page tables:
@@ -868,7 +867,6 @@ static int host_mapping_level(struct kvm *kvm, gfn_t gfn)
 
 #ifdef CONFIG_POPCORN_HYPE
 #ifdef CONFIG_POPCORN_CHECK_SANITY
-	/* !support hugepage */
 	BUG_ON(distributed_process(current) && page_size != PAGE_SIZE);
 #endif
 #endif
@@ -2623,8 +2621,9 @@ static void mmu_set_spte(struct kvm_vcpu *vcpu, u64 *sptep,
 
 	if (is_rmap_spte(*sptep)) {
 		/* sept present && in ram (!mmio) -
-			updating EPT is requied -
-			overwrite or create a EPT entry at current level */
+		 *	updating EPT is requied -
+		 *	 overwrite or create a EPT entry at current level
+		 */
 		/*
 		 * If we overwrite a PTE page pointer with a 2MB PMD, unlink
 		 * the parent of the now unreachable PTE.
@@ -2663,19 +2662,6 @@ static void mmu_set_spte(struct kvm_vcpu *vcpu, u64 *sptep,
 		 is_large_pte(*sptep)? "2MB" : "4kB",
 		 *sptep & PT_PRESENT_MASK ?"RW":"R", gfn,
 		 *sptep, sptep);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_CHECK_SANITY)
-
-//	if (INTERESTED_GFN(gfn)) {
-//#if 0
-//		printk("\tinstantiating %s PTE (%s) at %llx (spte %llx) addr %p\n",
-//			 is_large_pte(*sptep)? "*****2MB*****" : "4kB",
-//			 *sptep & PT_PRESENT_MASK ?"RW":"R", gfn,
-//			 *sptep, sptep);
-//#endif
-//		BUG_ON(is_large_pte(*sptep));
-//	}
-	//BUG_ON(is_large_pte(*sptep)); /* This happens ....... 200527 */
-#endif
 	if (!was_rmapped && is_large_pte(*sptep))
 		++vcpu->kvm->stat.lpages;
 
@@ -2696,11 +2682,6 @@ static pfn_t pte_prefetch_gfn_to_pfn(struct kvm_vcpu *vcpu, gfn_t gfn,
 				     bool no_dirty_log)
 {
 	struct kvm_memory_slot *slot;
-
-#ifdef CONFIG_POPCORN_HYPE
-	printk("[%d] %s(): since gfn_to_pfn_memslot_atomic forces WRITE fault\n",
-														current->pid, __func__);
-#endif
 
 	slot = gfn_to_memslot_dirty_bitmap(vcpu, gfn, no_dirty_log);
 	if (!slot)
@@ -2751,19 +2732,6 @@ static void __direct_pte_prefetch(struct kvm_vcpu *vcpu,
 		if (is_shadow_present_pte(*spte) || spte == sptep) {
 			if (!start)
 				continue;
-#ifdef CONFIG_POPCORN_HYPE
-			/* should not be here since we've disabled pte_prefetch */
-			if (distributed_process(current)) {
-				static unsigned long kvm_pf_cnt = 0;
-				kvm_pf_cnt++;
-				EPTVPRINTK("[%d] <%d> HYPE prefetch %p - %p POPHYPE skips #%lu\n",
-							current->pid, vcpu->vcpu_id, start, spte, kvm_pf_cnt);
-				if (current->at_remote && kvm_pf_cnt > 10) {
-					dump_stack();
-				}
-				break;
-			}
-#endif
 			if (direct_pte_prefetch_many(vcpu, sp, start, spte) < 0)
 				break;
 			start = NULL;
@@ -2822,31 +2790,13 @@ static int __direct_map(struct kvm_vcpu *vcpu, gpa_t v, int write,
 			dmap_cnt++;
 #endif
 			/* set gpa to sept - real setup
-				last level (lv 1): by mmu_set_spte()
-				inter level: by __set_spte() 			*/
+			 * last level (lv 1): by mmu_set_spte()
+			 * inter level: by __set_spte()
+			 */
 			mmu_set_spte(vcpu, iterator.sptep, ACC_ALL,
 				     write, &emulate, level, gfn, pfn,
 				     prefault, map_writable);
 #ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_STAT
-			//if ((dmap_cnt > dmap_skip_cnt || current->at_remote ||
-			if ((dmap_cnt > dmap_skip_cnt ||
-				INTERESTED_GVA(v)) &&
-				NOTINTERESTED_GVA(v) && distributed_process(current)
-				) {
-				EPTVPRINTK("\tdmap(): [%d] <%d> gfn %llx <-> pfn %llx "
-								"%s writable %s lv %d %llx %p "
-								"(last spte done) #%lu\n",
-								current->pid, vcpu->vcpu_id,
-								gfn, pfn,
-								write ? "W" : "R",
-								map_writable ? "O" : "X",
-								level, iterator.addr,
-								iterator.sptep, dmap_cnt);
-			}
-#endif
-
-			/* TODO 0522 no prefetch for ept */
 			if (distributed_process(current)) {
 #if !DISABLE_VANILLA_DIRECT_PTE_PREFETCH
 				direct_pte_prefetch(vcpu, iterator.sptep);
@@ -2868,16 +2818,6 @@ static int __direct_map(struct kvm_vcpu *vcpu, gpa_t v, int write,
 		if (!is_shadow_present_pte(*iterator.sptep)) { /* case 2 */
 			/* not last level and entry !present (mmu page fault) */
 			u64 base_addr = iterator.addr;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-			//if ((current->at_remote || INTERESTED_GVA(v)) &&
-			if ((INTERESTED_GVA(v)) &&
-				NOTINTERESTED_GVA(v) && distributed_process(current)
-				) {
-				EPTVPRINTK("\t\tdmap(): [%d] <%d> base_addr %llx %p "
-						"(inter-lv spte)\n",
-						current->pid, vcpu->vcpu_id, base_addr, iterator.sptep);
-			}
-#endif
 
 			/* get the mmu page entry idx */
 			base_addr &= PT64_LVL_ADDR_MASK(iterator.level);
@@ -3128,9 +3068,6 @@ exit:
 
 static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 			 gva_t gva, pfn_t *pfn, bool write, bool *writable);
-#ifdef CONFIG_POPCORN_HYPE
-			 //unsigned long real_gva, unsigned long exit_qualification);
-#endif
 static void make_mmu_pages_available(struct kvm_vcpu *vcpu);
 
 static int nonpaging_map(struct kvm_vcpu *vcpu, gva_t v, u32 error_code,
@@ -3162,14 +3099,7 @@ static int nonpaging_map(struct kvm_vcpu *vcpu, gva_t v, u32 error_code,
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
 	smp_rmb();
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* handled in previous level */
-	printk("[%d] %s: THIS IS SW TDP (no EPT)\n", current->pid, __func__);
-#endif
 	if (try_async_pf(vcpu, prefault, gfn, v, &pfn, write, &map_writable))
-#ifdef CONFIG_POPCORN_HYPE
-													// -2, -2)) // dbg
-#endif
 		return 0;
 
 	if (handle_abnormal_pfn(vcpu, v, gfn, pfn, ACC_ALL, &r))
@@ -3271,11 +3201,6 @@ static int mmu_alloc_direct_roots(struct kvm_vcpu *vcpu)
 		++sp->root_count;
 		spin_unlock(&vcpu->kvm->mmu_lock);
 		vcpu->arch.mmu.root_hpa = __pa(sp->spt);
-#ifdef CONFIG_POPCORN_HYPE
-		PHMIGRATEPRINTK("<%d> %s(): vcpu->arch.mmu.root_hpa %llx = "
-				"__pa(sp->spt) (pa is per host VM. And all vcpu shared?)\n",
-				vcpu->vcpu_id, __func__, vcpu->arch.mmu.root_hpa);
-#endif
 	} else if (vcpu->arch.mmu.shadow_root_level == PT32E_ROOT_LEVEL) {
 		for (i = 0; i < 4; ++i) {
 			hpa_t root = vcpu->arch.mmu.pae_root[i];
@@ -3292,10 +3217,6 @@ static int mmu_alloc_direct_roots(struct kvm_vcpu *vcpu)
 			spin_unlock(&vcpu->kvm->mmu_lock);
 			vcpu->arch.mmu.pae_root[i] = root | PT_PRESENT_MASK;
 		}
-#ifdef CONFIG_POPCORN_HYPE
-		printk("<%d> %s(): [NOT USED]\n",
-					vcpu->vcpu_id, __func__);
-#endif
 		vcpu->arch.mmu.root_hpa = __pa(vcpu->arch.mmu.pae_root);
 	} else
 		BUG();
@@ -3309,9 +3230,6 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 	u64 pdptr, pm_mask;
 	gfn_t root_gfn;
 	int i;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	printk("<%d> %s(): never happened\n", vcpu->vcpu_id, __func__);
-#endif
 
 	root_gfn = vcpu->arch.mmu.get_cr3(vcpu) >> PAGE_SHIFT;
 
@@ -3651,15 +3569,14 @@ atomic64_t kvm_eptfault_cnt = ATOMIC64_INIT(0);
 char kvmaddr_hex_str[PAGE_SIZE * 10]; /* print data page overtime */
 #endif
 #endif
-/* 	ret -
-		false: GOOD, go to __direct_map()
-		true: BAD, return 0 from tdp_page_fault	*/
-/* pfn !!!!!! can be ERR(e.g. IO required) */
+
+/*
+ * return false: GOOD, go to __direct_map()
+ * return true: BAD, return 0 from tdp_page_fault
+ * pfn !!!!!! can be ERR(e.g. IO required)
+*/
 static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 			 gva_t gva, pfn_t *pfn, bool write, bool *writable)
-#ifdef CONFIG_POPCORN_HYPE
-	 // unsigned long real_gva, unsigned long exit_qualification) // dbg
-#endif
 {
 	struct kvm_memory_slot *slot;
 	bool async;
@@ -3667,34 +3584,14 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 	ktime_t dt, kvm_eptfault_end, kvm_eptfault_start = ktime_get();
 #endif
 
-#ifdef CONFIG_POPCORN_HYPE
-#if 0
-	if (gva == 0x99000 || current->at_remote ||
-		(gva >> 12  == 0x1a0c) ||
-		INTERESTED_GVA(gva)) {
-		EPTVPRINTK("%s(): [%d] <%d> gfn %llx gva %lx %s - 1\n",
-					__func__, current->pid, vcpu->vcpu_id, gfn, gva,
-					write ? "W" : "");
-	}
-#endif
-
-#ifdef CONFIG_POPCORN_CHECK_SANITY
-	if (current->at_remote)
-		BUG_ON(prefault);
-#endif
-#endif
-
 	slot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
-#ifdef CONFIG_POPCORN_HYPE
-	//WARN_ON(!slot); /* MMIO - go emu or usr */
-#endif
 	async = false;
-	/* gfn -> hva -> pfn (!!&sync) (old) gfn_to_pfn_async() */
-	/* <3> atomic <4> async */
 	*pfn = __gfn_to_pfn_memslot(slot, gfn, false, &async, write, writable);
-	/* __gfn_to_pfn_memslot -> hva_to_pfn -> [PAGEFAULT]!! -> */
-	/* TODO: I'm currently using *pfn == REMOTE_CANNOT_DOWN_MMAP_SEM to indicate
-		a DSM fail (cannot down sem_mmap) on remote */
+
+
+
+
+
 
 #if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
 	/* Collect info */
@@ -3703,10 +3600,8 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 		*pfn != KVM_PFN_ERR_HWPOISON &&
 		*pfn != 0) { /* succ */
 		char op = write ? 'W' : 'R';
-		//unsigned long address = gva, addr = gfn;
 		unsigned long address = gva, addr = gva >> PAGE_SHIFT; /* vmcs_cr2 is gpa (x86 host is hva)! */
 		extern void dsm_traffic_collect_vcpu(unsigned long address, unsigned long addr, char op, struct kvm_vcpu *vcpu, unsigned long ns);
-		//unsigned long real_gva, unsigned long exit_qualification); //dbg
 
 		kvm_eptfault_end = ktime_get();
 		dt = ktime_sub(kvm_eptfault_end, kvm_eptfault_start);
@@ -3714,7 +3609,6 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 		atomic64_inc(&kvm_eptfault_cnt);
 
 		dsm_traffic_collect_vcpu(address, addr, op, vcpu, ktime_to_ns(dt));
-									//real_gva, exit_qualification); //dbg
 
 		// periodically print page data
 		if (addr == 0x1e0d ||
@@ -3752,6 +3646,9 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 		} else {
 			// not on pgt
 		}
+
+
+
 
 
 #if 1
@@ -3806,88 +3703,29 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 #endif
 
 	}
+
+
+
 #endif // end CONFIG_POPCORN_STAT
 
-#ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_CHECK_SANITY
-	WARN_ON(!pfn); /* -> usr exit KVM_EXIT_MMIO 6 =? !slot */
-#endif
-#endif
 
-#ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_STAT
-	if ((distributed_process(current) &&
-		//(current->at_remote || INTERESTED_GVA(gva))) &&
-		(INTERESTED_GVA(gva))) && NOTINTERESTED_GVA(gva)) {
-		if (pfn) {
-			if (*pfn == KVM_PFN_ERR_FAULT) { /* 7ff << 52 meaning can't handle */
-				/* if (async && vma_is_valid(vma, write_fault)) */
-				BUG_ON(!async);
-				EPTVPRINTK("\t***THIS IS A IOfault*** (like swap/dsm?)\n");
-				BUG(); /* no swap allowed */
-			} // else { our dsm fault
-			/* 1st memslot/hva_to_pfn done */
-			EPTVPRINTK("\t%s(): [%d] <%d> =1st done gfn %llx [got pfn %llx%s]",
-						//"async %s %s\n",
-						//"[slot %p] writable(%s)\n",
-						__func__, current->pid, vcpu->vcpu_id, gfn, *pfn,
-					*pfn == REMOTE_CANNOT_DOWN_MMAP_SEM ? " (dsmlkfail)" : "");
-					//async ? "true" : "false");
-					//!async ? "=(default)good_exit" : "*=try2nd/IOasync*");
-					//slot, writable ? (*writable ? "O" : "X") : "-");
-
-			/* memslot/hva_to_pfn thinks swap needed - no swap allowed */
-			BUG_ON(async);
-		} else {
-//			EPTVPRINTK("%s(): w<%d> gfn %llx gva %lx "
-//				"[[[pfn %s]]] async(%s) slot %p - 2\n",
-//				__func__, vcpu->vcpu_id, gfn, gva, "NULL", async?"O":"X", slot);
-		}
-	}
-	/* if REMOTE_CANNOT_DOWN_MMAP_SEM, async = false. */
-#endif
-#endif // HYPE
 	if (!async)
 		return false; /* *pfn has correct page already */
-							/* ret false: go back and do __direct_map */
-	/* End of pophype
-	 ***************************************************/
+						/* ret false: go back and do __direct_map */
 
-	/***************************************************
-	 *	*async==true - IO needed - not fixed yet path
-	 */
 #ifdef CONFIG_POPCORN_HYPE
-	BUG_ON(distributed_process(current)); /* Pophype should never reach here */
-#endif
+	/* Pophype should never reach here */
+	BUG_ON(distributed_process(current));
 
+	/*	*async==true - IO needed - not fixed yet path */
+#endif
 	if (!prefault && kvm_can_do_async_pf(vcpu)) {
 		trace_kvm_try_async_get_page(gva, gfn);
 		if (kvm_find_async_pf_gfn(vcpu, gfn)) {
 			trace_kvm_async_pf_doublefault(gva, gfn);
 			kvm_make_request(KVM_REQ_APF_HALT, vcpu); /* set bit */
-#ifdef CONFIG_POPCORN_HYPE
-			if ((distributed_process(current) &&
-				//(current->at_remote || INTERESTED_GVA(gva))) &&
-				(INTERESTED_GVA(gva))) &&
-				NOTINTERESTED_GVA(gva)) {
-				EPTVPRINTK("\t%s(): ??[%d] <%d> gfn %llx [[[pfn %llx]]] "
-						"???set_bit(KVM_REQ_APF_HALT)??? don't dmap()\n",
-						__func__, current->pid, vcpu->vcpu_id, gfn, *pfn);
-			}
-#endif
 			return true;
 		} else if (kvm_arch_setup_async_pf(vcpu, gva, gfn)) { /* swap in */
-#ifdef CONFIG_POPCORN_HYPE
-			/* https://lists.freedesktop.org/archives/dri-devel/2016-October/122305.html */
-			if ((distributed_process(current) &&
-				//(current->at_remote || INTERESTED_GVA(gva))) &&
-				(INTERESTED_GVA(gva))) &&
-				NOTINTERESTED_GVA(gva)) {
-				EPTVPRINTK("\t%s(): !![%d] <%d> gfn %llx [[[pfn %llx]]] "
-						"***SWAP-INing*** don't dmap()\n",
-						__func__, current->pid, vcpu->vcpu_id, gfn, *pfn);
-			}
-#endif
 			return true;
 		}
 	}
@@ -3895,16 +3733,6 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 	/* gfn -> hva -> pfn  (!&sync) (old) gfn_to_pfn_prot() */
 	/* <3> !aomic <4> !async */
 	*pfn = __gfn_to_pfn_memslot(slot, gfn, false, NULL, write, writable);
-#ifdef CONFIG_POPCORN_HYPE
-	//if (gva == 0x99000) { // if (gva > xxx)
-	if ((distributed_process(current) &&
-		//(current->at_remote || INTERESTED_GVA(gva))) && NOTINTERESTED_GVA(gva)) {
-		(INTERESTED_GVA(gva))) && NOTINTERESTED_GVA(gva)) {
-		EPTVPRINTK("\t%s(): [%d] <%d> gfn %llx "
-				"- 2nd done [[[got pfn %llx]]] ENFORCE to do dmap()\n",
-				__func__, current->pid, vcpu->vcpu_id, gfn, *pfn);
-	}
-#endif
 	return false; /* go to __direct_map */
 }
 
@@ -3933,9 +3761,6 @@ extern atomic64_t kvm_eptreinv_fast_cnt;
 extern atomic64_t kvm_eptreinv_ns;
 static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 	  bool prefault)
-#ifdef CONFIG_POPCORN_HYPE
-	  //unsigned long real_gva, unsigned long exit_qualification) // dbg
-#endif
 {
 	pfn_t pfn;
 	int r; /* emulate */
@@ -3986,7 +3811,7 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 						current->pid, vcpu->vcpu_id, gfn);
 		}
 		trace_kvm_ept_retry(gpa, 0, 0);
-		atomic64_inc(&kvm_eptreinv_fast_cnt); /* not happen */
+		atomic64_inc(&kvm_eptreinv_fast_cnt);
 #endif
 		return 0;
 	}
@@ -4001,16 +3826,20 @@ pophype_retry:
 #ifdef CONFIG_POPCORN_HYPE
 	/* gfn -> hva -PAGEFAULT> pfn */
 	{
-		/*	__gfn_to_pfn_memslot() ~= hva_to_pfn()
-			Do two __gfn_to_pfn_memslot() = fast (tlb cache) + slow (host pte walk)
-			1st __gfn_to_pfn_memslot() arg = <3> !atomic <4> &async
-			1st __gfn_to_pfn_memslot() arg = <3> !atomic <4> NULL
-
-			try_async_pf will return the result and tell dmap or not
-			This is the ret for only try_async_pf, above it r=emulate */
-		/* 	false: GOOD, go to __direct_map()
-			true: BAD, return 0 from tdp_page_fault	*/
-		/* e.g. swapping-in return true - meaning don't map */
+		/*
+		 *	__gfn_to_pfn_memslot() ~= hva_to_pfn()
+		 * 	Do two __gfn_to_pfn_memslot() = fast (tlb cache) + slow (host pte walk)
+		 *	1st __gfn_to_pfn_memslot() arg = <3> !atomic <4> &async
+		 *	1st __gfn_to_pfn_memslot() arg = <3> !atomic <4> NULL
+		 *
+		 *	try_async_pf will return the result and tell dmap or not
+		 *	This is the ret for only try_async_pf, above it r=emulate
+		 *
+		 * false: GOOD, go to __direct_map()
+		 * true: BAD, return 0 from tdp_page_fault
+		 *
+		 * e.g. swapping-in returns true - meaning don't map
+		 */
 #ifdef CONFIG_POPCORN_STAT
 		ktime_t dt, tdp_fault_end, tdp_fault_start = ktime_get();
 #endif
@@ -4057,33 +3886,14 @@ pophype_retry:
 			atomic64_add(ktime_to_ns(dt), &kvm_eptrefault_ns);
 			atomic64_inc(&kvm_eptrefault_cnt);
 #endif
-			/* REMOTE_CANNOT_DOWN_MMAP_SEM =
-				don't map + VM-ENTER and immediately fault (VM-EXIT) again */
-			EPTVPRINTK("\t[%d] <%d> %llx ==== Jack full hype retry ====\n",
-										current->pid, vcpu->vcpu_id, gfn);
-			/* this is for debugging(printk) - give origin room to filp game */
-			//io_schedule();
 			return 0; /* emulate (see __direct_map)
 				return to
 				(rewrite: if here=0, will return 1 to vcpu_run())
 				r = kvm_x86_ops->handle_exit(vcpu); (./arch/x86/kvm/x86.c) */
-			/* TODO: working on see if this is a VM retry BUT kvm_eptrefault_cnt is 0.......
-				handled in
-				kvm_arch_vcpu_ioctl_run {
-					r = vcpu_run(vcpu) {
-						r = vcpu_enter_guest(vcpu);
-						if (r <= 0)
-							break;
-						(r>0 (VM-entry)...)
-					}
-					goto usr space...
-				}
-			*/
 		}
 	} /* try_async_pf() done */
 #else /* !CONFIG_POPCORN_HYPE */
 	if (try_async_pf(vcpu, prefault, gfn, gpa, &pfn, write, &map_writable))
-														//-3, -3)) //dbg
 		return 0;
 #endif
 
@@ -4116,25 +3926,10 @@ pophype_retry:
 			 level, gfn, pfn, prefault);
 	spin_unlock(&vcpu->kvm->mmu_lock);
 
-#ifdef CONFIG_POPCORN_HYPE
-//	if ((current->at_remote || INTERESTED_GVA(gpa)) &&
-//		NOTINTERESTED_GVA(gpa)) {
-//		EPTMPRINTK("\ttdp(): @@ [%d] <%d> dmap() done gfn %llx <-> pfn %llx "
-//					"%s writable %s lv %d r(emu) %d(%s)\n",
-//					current->pid, vcpu->vcpu_id, gfn, pfn,
-//					write ? "W" : "R",
-//					map_writable ? "O" : "X",
-//					level, r, r ? "Obad" : "Xgood");
-//	}
-#endif
-
 	return r;
 
 out_unlock:
 	spin_unlock(&vcpu->kvm->mmu_lock);
-#ifdef CONFIG_POPCORN_HYPE
-//out_pfn:
-#endif
 	kvm_release_pfn_clean(pfn);
 	return 0;
 }
@@ -4650,11 +4445,6 @@ void kvm_init_shadow_ept_mmu(struct kvm_vcpu *vcpu, bool execonly)
 {
 	struct kvm_mmu *context = &vcpu->arch.mmu;
 
-#ifdef CONFIG_POPCORN_HYPE
-	printk("<%d> WE ARE NOT %s()\n", vcpu->vcpu_id, __func__);
-	WARN_ON(1);
-#endif
-
 	MMU_WARN_ON(VALID_PAGE(context->root_hpa));
 
 	context->shadow_root_level = kvm_x86_ops->get_tdp_level();
@@ -4679,9 +4469,6 @@ static void init_kvm_softmmu(struct kvm_vcpu *vcpu)
 {
 	struct kvm_mmu *context = &vcpu->arch.mmu;
 
-#ifdef CONFIG_POPCORN_HYPE
-	printk("<%d> %s()\n", vcpu->vcpu_id, __func__);
-#endif
 	kvm_init_shadow_mmu(vcpu);
 	context->set_cr3           = kvm_x86_ops->set_cr3;
 	context->get_cr3           = get_cr3;
@@ -4740,9 +4527,6 @@ static void init_kvm_mmu(struct kvm_vcpu *vcpu)
 
 void kvm_mmu_reset_context(struct kvm_vcpu *vcpu)
 {
-#ifdef CONFIG_POPCORN_HYPE
-	VCPUPRINTK("<%d> %s()\n", vcpu->vcpu_id, __func__);
-#endif
 	kvm_mmu_unload(vcpu);
 	init_kvm_mmu(vcpu);
 }
@@ -4751,14 +4535,6 @@ EXPORT_SYMBOL_GPL(kvm_mmu_reset_context);
 int kvm_mmu_load(struct kvm_vcpu *vcpu)
 {
 	int r;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static int first = 1;
-	if (first) {
-		first = 0;
-		printk("<%d> %s(): vcpu->arch.mmu.set_cr3 %p\n",
-			vcpu->vcpu_id, __func__, vcpu->arch.mmu.set_cr3);
-	}
-#endif
 
 	r = mmu_topup_memory_caches(vcpu);
 	if (r)
@@ -5043,102 +4819,17 @@ static bool is_mmio_page_fault(struct kvm_vcpu *vcpu, gva_t addr)
 
 	return vcpu_match_mmio_gva(vcpu, addr);
 }
-/* 0: good???
- * 1: bad???
- */
+
 int kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gva_t cr2, u32 error_code,
 		       void *insn, int insn_len,
 			   unsigned long real_gva, unsigned long exit_qualification)
 {
 	int r, emulation_type = EMULTYPE_RETRY; /* r: emulate */
 	enum emulation_result er;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	static unsigned long pte_fault_cnt = 0;
-	//unsigned long pte_fault_skip = 4200; // 4200 very close
-	unsigned long pte_fault_skip = 45500; // 4200 very close
-	//static unsigned long theonly_pte_fault_cnt = 0;
-
-	//unsigned long theonly_pte_fault_skip = 50000; // origin // 47108 sipi
-	//unsigned long theonly_pte_fault_skip_remote = 0;
-	//unsigned long theonly_pte_fault_skip = 800000; // origin // < 800000 spinning
-	//unsigned long theonly_pte_fault_skip_remote = 750000; // 716118 spinning
-
-
-//	unsigned long theonly_pte_fault_skip = 1000000; // origin // < 800000 spinning
-//	unsigned long theonly_pte_fault_skip_remote = 1050000; // 716118 spinning
-	//unsigned long theonly_pte_fault_skip = 10500000; // origin // < 800000 spinning
-	// latest
-	//unsigned long theonly_pte_fault_skip = 9000000; // origin // < 800000 spinning
-	//unsigned long theonly_pte_fault_skip_remote = 8000000; // 716118 spinning
-
-	if (distributed_process(current))
-		pte_fault_cnt++;
-
-//	if ((vcpu->vcpu_id || current->at_remote || INTERESTED_GVA(cr2)) &&
-//		NOTINTERESTED_GVA(cr2)
-//		) {
-			//pte_fault_cnt++;
-			//if ((vcpu->vcpu_id || current->at_remote ||
-			if ((vcpu->vcpu_id ||
-				pte_fault_cnt < 500 ||
-				pte_fault_cnt > pte_fault_skip ||
-				INTERESTED_GVA(cr2)) &&
-				NOTINTERESTED_GVA(cr2) && distributed_process(current)
-				) {
-				/* origin pre X fetch X remote all cases*/
-				//EPTPRINTK("\n@@ EPTFAULT [%d] <%d> cr2 %lx gfn %lx "
-				//				"%s present %s fetch %s %s #%lu\n",
-				EPTPRINTK("\n@@ [%d] <%d> %lx %lx %s p %s pf %s %s#%lu\n",
-							current->pid, vcpu->vcpu_id, cr2, cr2 >> PAGE_SHIFT,
-							error_code & PFERR_WRITE_MASK ? "W" : "R",
-							error_code & PFERR_PRESENT_MASK ? "O" : "X",
-							error_code & PFERR_FETCH_MASK ? "O" : "X",
-							error_code & PFERR_RSVD_MASK ? "MMIO " : "",
-							pte_fault_cnt);
-			}
-//	}
-
-//	theonly_pte_fault_cnt++;
-//	if ((!current->at_remote && theonly_pte_fault_cnt > theonly_pte_fault_skip) ||
-//		(current->at_remote && theonly_pte_fault_cnt > theonly_pte_fault_skip_remote)) {
-		// working on
-		//EPTPRINTK("\n@@ EPTFAULT [%d] <%d> cr2 %lx gfn %lx "
-		//				"%s present %s fetch %s nid %d #%lu\n",
-//		EPTPRINTK("\n@@ [%d] <%d> %lx %lx %s %s %s %d #%lu\n",
-//		//printk("\n@@ [%d] <%d> %lx %lx %s %s %s %d #%lu\n",
-//				current->pid, vcpu->vcpu_id, cr2, cr2 >> PAGE_SHIFT,
-//				error_code & PFERR_WRITE_MASK ? "W" : "R",
-//				error_code & PFERR_PRESENT_MASK ? "O" : "X",
-//				error_code & PFERR_FETCH_MASK ? "O" : "X",
-//				popcorn_get_hnid(), theonly_pte_fault_cnt);
-//	}
-
-	/* tdp_page_fault */
-#endif
 
 	/* r = emulate */
 	r = vcpu->arch.mmu.page_fault(vcpu, cr2, error_code, false);
-#ifdef CONFIG_POPCORN_HYPE
-						//real_gva, exit_qualification); // dbg
-#endif
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	/* @@ - prefault always false */
-	//if ((vcpu->vcpu_id || current->at_remote || INTERESTED_GVA(cr2)) &&
-	if ((vcpu->vcpu_id || INTERESTED_GVA(cr2)) &&
-		NOTINTERESTED_GVA(cr2)
-		) {
-			if (pte_fault_cnt > pte_fault_skip ||
-				pte_fault_cnt < VM_SINGLE_HANDLE_DISPLAY_CNT ||
-				//vcpu->vcpu_id || current->at_remote) {
-				vcpu->vcpu_id) {
-				EPTPRINTK("@@>>[%d] <%d> %lx emu %s\n",
-							current->pid, vcpu->vcpu_id,
-							cr2 >> PAGE_SHIFT, r ? "Obad" : "Xgood");
-			}
-//		}
-	}
-#endif
 	if (r < 0) /* emulate < 0 = ERR */
 		goto out;
 
@@ -5151,26 +4842,7 @@ int kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gva_t cr2, u32 error_code,
 	if (is_mmio_page_fault(vcpu, cr2))
 		emulation_type = 0;
 
-#ifdef CONFIG_POPCORN_HYPE
-	EPTPRINTK("@@@@ [%d] <%d> %lx emu emulation_type %d\n",
-			current->pid, vcpu->vcpu_id, cr2 >> PAGE_SHIFT, emulation_type);
-#endif
-
 	er = x86_emulate_instruction(vcpu, cr2, emulation_type, insn, insn_len);
-
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	if ((distributed_remote_process(current) || INTERESTED_GVA(cr2)) &&
-		NOTINTERESTED_GVA(cr2)) {
-		goto forceprint2;
-	}
-	if (vcpu->vcpu_id || distributed_remote_process(current) ||
-		(!vcpu->vcpu_id && (cr2 < 0x10bf000 || cr2 > 0xcb40a000))
-		) {
-forceprint2:
-		EPTVPRINTK("%s():\t\temu_ins <%d> cr2 %lx [er %d](%s)\n",
-				__func__, vcpu->vcpu_id, cr2, er, !er ? "O" : "X");
-	}
-#endif
 
 	switch (er) {
 	case EMULATE_DONE:
