@@ -164,12 +164,6 @@ static bool FNAME(prefetch_invalid_gpte)(struct kvm_vcpu *vcpu,
 				  struct kvm_mmu_page *sp, u64 *spte,
 				  u64 gpte)
 {
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(current)) {
-		printk("%s(): [%d]\n", __func__, current->pid);
-	}
-#endif
-
 	if (is_rsvd_bits_set(&vcpu->arch.mmu, gpte, PT_PAGE_TABLE_LEVEL))
 		goto no_present;
 
@@ -281,14 +275,6 @@ static int FNAME(walk_addr_generic)(struct guest_walker *walker,
 	u16 errcode = 0;
 	gpa_t real_gpa;
 	gfn_t gfn;
-#ifdef CONFIG_POPCORN_HYPE
-#if 0
-	static u64 gva_to_gfn_on_host_cnt = 0;
-	static u64 fetch_cnt = 0;
-	static u64 w_cnt = 0;
-	static u64 usr_cnt = 0;
-#endif
-#endif
 
 	trace_kvm_mmu_pagetable_walk(addr, access);
 retry_walk:
@@ -310,45 +296,6 @@ retry_walk:
 	accessed_dirty = PT_GUEST_ACCESSED_MASK;
 	pt_access = pte_access = ACC_ALL;
 	++walker->level;
-
-#ifdef CONFIG_POPCORN_HYPE
-#if 0
-	/* pophype - many - gva_to_gpa gva():
-		for gva gfn so that gva_to_gpa() can then just do gfn to gva */
-	{	/* This func does: gva to gfn */
-		if (write_fault) { w_cnt++; }
-		if (user_fault) { usr_cnt++; }
-		if (fetch_fault) { fetch_cnt++; }
-		gva_to_gfn_on_host_cnt++;
-		if (!(gva_to_gfn_on_host_cnt % 10000))
-			printk("%s(): [%d] gva 0x%lx "
-				"faults-[usr] %d [write] %d [fetch] %d "
-				"#%llu-%llu-%llu #%llu\n", __func__,
-				current->pid, addr,
-				user_fault, write_fault, fetch_fault,
-				usr_cnt, w_cnt, fetch_cnt, gva_to_gfn_on_host_cnt);
-		if (!(gva_to_gfn_on_host_cnt % (10000 * 10))) { dump_stack(); }
-		// 		paging64_walk_addr_generic
-		// 		paging64_gva_to_gpa
-		// 		kvm_arch_vcpu_ioctl_translate
-		// 		vm_stack_walk
-		// 		pophype_show_guest_rip_rsp !!!!!!!!!!!!!!!! wasted...
-		// 		__dsm_traffic_collect.part.22
-		// 		dsm_traffic_collect_vcpu
-		// try_async_pf
-		// tdp_page_fault
-		// kvm_mmu_page_fault
-		// handle_ept_violation [kvm_intel]
-		// vmx_handle_exit [kvm_intel]
-		// kvm_arch_vcpu_ioctl_run
-		// kvm_vcpu_ioctl
-		// do_vfs_ioctl
-		// SyS_ioctl
-		// entry_SYSCALL_64_fastpath
-	}
-	/* TODO see 10fe is input or output (by thie pgwalk)*/
-#endif
-#endif
 
 	do {
 		gfn_t real_gfn;
@@ -393,21 +340,6 @@ retry_walk:
 		if (unlikely(__copy_from_user(&pte, ptep_user, sizeof(pte))))
 			goto error;
 		walker->ptep_user[walker->level - 1] = ptep_user;
-
-#ifdef CONFIG_POPCORN_HYPE
-#if 0
-		/* pophype */
-		if (!(gva_to_gfn_on_host_cnt % 10000)) {
-			printk("%s(): [%d] gva 0x%lx walkguestinhost - "
-				"pte 0x%llx ptep_user %p pte_gpa 0x%llx #%llu\n", __func__,
-				current->pid, addr, (u64)pte, ptep_user, pte_gpa,
-				gva_to_gfn_on_host_cnt);
-				// TODO: ptep_user to guest addr?
-				//1e0dff0
-				//1e0dff8
-		}
-#endif
-#endif
 
 		trace_kvm_mmu_paging_element(pte, walker->level);
 
@@ -527,12 +459,6 @@ FNAME(prefetch_gpte)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
 	gfn_t gfn;
 	pfn_t pfn;
 
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(current)) {
-		printk("%s(): [%d]\n", __func__, current->pid);
-	}
-#endif
-
 	if (FNAME(prefetch_invalid_gpte)(vcpu, sp, spte, gpte))
 		return false;
 
@@ -546,11 +472,6 @@ FNAME(prefetch_gpte)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
 	if (is_error_pfn(pfn))
 		return false;
 
-//#ifdef CONFIG_POPCORN_HYPE
-//	if (distributed_process(current)) {
-//		printk("%s(): [%d]\n", __func__, current->pid);
-//	}
-//#endif
 	/*
 	 * we call mmu_set_spte() with host_writable = true because
 	 * pte_prefetch_gfn_to_pfn always gets a writable pfn.
@@ -600,12 +521,6 @@ static void FNAME(pte_prefetch)(struct kvm_vcpu *vcpu, struct guest_walker *gw,
 	u64 *spte;
 	int i;
 
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(current)) {
-		printk("%s(): [%d]\n", __func__, current->pid);
-	}
-#endif
-
 	sp = page_header(__pa(sptep));
 
 	if (sp->role.level > PT_PAGE_TABLE_LEVEL)
@@ -643,12 +558,6 @@ static int FNAME(fetch)(struct kvm_vcpu *vcpu, gva_t addr,
 	struct kvm_shadow_walk_iterator it;
 	unsigned direct_access, access = gw->pt_access;
 	int top_level, emulate = 0;
-
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(current)) {
-		printk("%s(): [%d]\n", __func__, current->pid);
-	}
-#endif
 
 	direct_access = gw->pte_access;
 
@@ -919,12 +828,6 @@ static void FNAME(invlpg)(struct kvm_vcpu *vcpu, gva_t gva)
 	int level;
 	u64 *sptep;
 
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(current)) {
-		printk("%s(): [%d]\n", __func__, current->pid);
-	}
-#endif
-
 	vcpu_clear_mmio_info(vcpu, gva);
 
 	/*
@@ -1030,12 +933,6 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 	int i, nr_present = 0;
 	bool host_writable;
 	gpa_t first_pte_gpa;
-
-#ifdef CONFIG_POPCORN_HYPE
-	if (distributed_process(current)) {
-		printk("%s(): [%d]\n", __func__, current->pid);
-	}
-#endif
 
 	/* direct kvm_mmu_page can not be unsync. */
 	BUG_ON(sp->role.direct);
