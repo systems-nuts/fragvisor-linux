@@ -133,67 +133,6 @@ static unsigned long map_difference(struct mm_struct *mm, struct file *file,
 	return ret;
 }
 
-
-#if 0
-/**
- * Heterogeneous binary support
- *
- * Handle misaligned ELF sections in the heterogeneous binary.
- * However, recent alignment tool updates makes ELF sections aligned,
- * so this is not required anymore
- * Should be paried to fs/binfmt_elf.c
- */
-static unsigned long __get_file_offset(struct file *file, unsigned long vm_start)
-{
-	struct elfhdr elf_ex;
-	struct elf_phdr *elf_eppnt = NULL, *elf_eppnt_start = NULL;
-	int size, retval, i;
-
-	retval = kernel_read(file, 0, (char *)&elf_ex, sizeof(elf_ex));
-	if (retval != sizeof(elf_ex)) {
-		printk("%s: ERROR in Kernel read of ELF file\n", __func__);
-		retval = -1;
-		goto out;
-	}
-
-	size = elf_ex.e_phnum * sizeof(struct elf_phdr);
-
-	elf_eppnt = kmalloc(size, GFP_KERNEL);
-	if (elf_eppnt == NULL) {
-		printk("%s: ERROR: kmalloc failed in\n", __func__);
-		retval = -1;
-		goto out;
-	}
-
-	elf_eppnt_start = elf_eppnt;
-	retval = kernel_read(file, elf_ex.e_phoff, (char *)elf_eppnt, size);
-	if (retval != size) {
-		printk("%s: ERROR: during kernel read of ELF file\n", __func__);
-		retval = -1;
-		goto out;
-	}
-	retval = 0;
-	for (i = 0; i < elf_ex.e_phnum; i++, elf_eppnt++) {
-		if (elf_eppnt->p_type != PT_LOAD) continue;
-
-		if ((vm_start >= elf_eppnt->p_vaddr) &&
-				(vm_start <= (elf_eppnt->p_vaddr + elf_eppnt->p_memsz))) {
-			retval = elf_eppnt->p_offset +
-				(vm_start & PAGE_MASK) - (elf_eppnt->p_vaddr & PAGE_MASK);
-			retval >>= PAGE_SHIFT;
-			break;
-		}
-	}
-
-out:
-	if (elf_eppnt_start != NULL)
-		kfree(elf_eppnt_start);
-
-	return retval;
-}
-#endif
-
-
 /**
  * VMA operation delegators at remotes
  */
@@ -257,7 +196,7 @@ unsigned long vma_server_mmap_remote(struct file *file,
 			addr, addr + len, prot, flags);
 	if (req->path[0] != '\0') {
 #ifdef CONFIG_POPCORN_HYPE
-		/* pophype handle files (mmaped vcpu region)*/
+		/* pophype handle files (mmaped vcpu region) */
 		int i;
 		struct fdtable *fdt;
 		spin_lock(&current->files->file_lock);
@@ -269,7 +208,7 @@ unsigned long vma_server_mmap_remote(struct file *file,
 				POP_PK("\t*file %p to fd %d\n\n", file, i);
 				req->fd = i;
 				break;
-			} //else { printk("\tnot found %p\n", i, file); }
+			}
 		}
 #endif
 		VSPRINTK("  [%d] %s\n", current->pid, req->path);
@@ -280,10 +219,7 @@ unsigned long vma_server_mmap_remote(struct file *file,
 #ifdef CONFIG_POPCORN_HYPE
     if (file) {
 		/* pophype handle files (mmaped vcpu region) */
-        //char path[512];
-        //get_file_path(file, path, sizeof(path)); /* file to path */
 		/* check path */
-        //if (!strncmp("anon_inode:kvm-vcpu:", path,
         if (!strncmp("anon_inode:kvm-vcpu:", req->path,
                 sizeof("anon_inode:kvm-vcpu:") - 1 )) {
 			/* save to pophype table */
@@ -293,8 +229,7 @@ unsigned long vma_server_mmap_remote(struct file *file,
 						((struct kvm_vcpu *)file->private_data)->run;
 			hype_node_info[my_nid][req->fd]->vcpu_id =
 						((struct kvm_vcpu *)file->private_data)->vcpu_id;
-			hype_node_info[my_nid][req->fd]->uaddr = res->addr; // done by delegation
-			//hype_node_info[my_nid][req->fd]->tsk = current; // ./drivers/vhost/vhost.c
+			hype_node_info[my_nid][req->fd]->uaddr = res->addr; /* done by delegation */
 			POP_PK("--------------------------------------------\n");
             POP_PK("%s(): ATTENTION this is a mmap(\"%s\") "
 					"req->addr %lx [deleg] res->addr 0x%lx len %lx "
@@ -337,9 +272,6 @@ unsigned long vma_server_mmap_remote(struct file *file,
 			prot, flags, pgoff);
 	up_write(&current->mm->mmap_sem);
 
-#if 0
-	/* TODO bebug  addr to vma vma->file */
-#endif
 out_free:
 	kfree(req);
 	pcn_kmsg_done(res);
@@ -506,37 +438,22 @@ int vma_server_munmap_origin(unsigned long start, size_t len, int nid_except)
 unsigned long pophype_vm_mmap_anon(unsigned long size, unsigned long prot, unsigned long flags)
 {
 	unsigned long hva = 0;
-	// 1. check nodes
-	//int __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa, u32 size)
-
 	struct remote_context *rc = get_task_remote(current);
-	/*======================= TODO =======================*/
 	BUG();
-	/*======================= TODO =======================*/
-	if (!rc) { // !migrated at all
+
+	if (!rc) { /* !migrated at all */
 		BUG_ON(my_nid);
 		hva = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
 				  MAP_SHARED | MAP_ANONYMOUS, 0);
 	} else {
-		if (!my_nid) { // origin
+		if (!my_nid) {
 			int nid;
-			// 2. origin: ->
-				//check nodes
 			for (nid = 1; nid < MAX_POPCORN_NODES; nid++) {
 				if (!get_popcorn_node_online(nid) || !rc->remote_tgids[nid])
 					continue; /* !msg || !migrated to the node */
-
-				// TODO(): send hva -> rc->hva ()
 			}
-		} else { // remote
-			// 3. remote: wait origin to reach (3 objs in rc)
-
-
-			// TODO: spin on ec->hva
-			// TODO: mimic  vma_server_mmap_remot's map_difference()
 		}
 	}
-//done:
 	HPPRINTK("%s: kvm alloates user-cannot-see hva address 0x%lx\n",
 														__func__, hva);
 	return hva;
@@ -668,15 +585,6 @@ static long __process_vma_op_at_origin(vma_op_request_t *req)
 				POP_PK("\n");
 
 				goto pophype_resume;
-#if 0
-				/* 2. Cannot get the path from sysfs */
-				get_file_path(file, path, sizeof(path)); /* user space */
-				printk("%s(): \"%s\" selected got *file %p "
-								"at origin (O)\n", __func__, path, file);
-				/* 3. Treat vcpu op as a normal region at origin */
-				printk("  [%d] (using) treat as /dev/zero\n", current->pid);
-				f = NULL;
-#endif
 			}
 #endif
 			ret = PTR_ERR(f);
@@ -709,11 +617,9 @@ pophype_resume:
 			hype_node_info[my_nid][req->fd]->vcpu_id =
 							((struct kvm_vcpu *)f->private_data)->vcpu_id;
 			hype_node_info[my_nid][req->fd]->uaddr = raddr;
-			//hype_node_info[my_nid][req->fd]->tsk = current; ./drivers/vhost/vhost.c
 			VCPUPRINTK("--------------------------------------------\n");
             VCPUPRINTK("%s(): ATTENTION this is a mmap(\"%s\") "
 					"delegated at origin\n", __func__, req->path);
-			//VCPUPRINTK("[%d] ori (INSTALL VCPU) [%d] fd %d vcpu_id %d "
 			POP_PK("[%d] ori (INSTALL VCPU) [%d][fd %d] vcpu_id %d "
 					"(kern)*vcpu->run [[[%p]]] uaddr [[[0x%lx]]] "
 						"*tsk [[%p]] (2nd usr cpu->kvm_run)\n",
@@ -723,9 +629,6 @@ pophype_resume:
 						hype_node_info[my_nid][req->fd]->uaddr,
 						hype_node_info[my_nid][req->fd]->tsk);
 			VCPUPRINTK("--------------------------------------------\n\n");
-#if 0
-			/* TODO bebug  addr to vma vma->file */
-#endif
 		} else if (f && !hype_filp) {
 			filp_close(f, NULL);
 		}
@@ -1016,11 +919,6 @@ static int __update_vma(struct task_struct *tsk, vma_info_response_t *res)
 #ifdef CONFIG_POPCORN_HYPE
 pophype_fall_through:
 #endif
-		/*
-		unsigned long orig_pgoff = res->vm_pgoff;
-		res->vm_pgoff = __get_file_offset(f, res->vm_start);
-		BUG_ON(res->vm_pgoff == -1);
-		*/
 		VSPRINTK("  [%d] %s + %lx\n", tsk->pid,
 				res->vm_file_path, res->vm_pgoff);
 	}
@@ -1038,13 +936,9 @@ pophype_fall_through:
 	err = map_difference(mm, f, res->vm_start, res->vm_end,
 				prot, flags, res->vm_pgoff);
 
-	if (f) filp_close(f, NULL);
+	if (f)
+		filp_close(f, NULL);
 
-	/*
-	vma = find_vma(mm, addr);
-	BUG_ON(!vma || vma->vm_start > addr);
-	if (res->vm_flags & VM_FETCH_LOCAL) vma->vm_flags |= VM_FETCH_LOCAL;
-	*/
 out:
 	downgrade_write(&mm->mmap_sem);
 	return ret;
@@ -1155,8 +1049,6 @@ int vma_server_init(void)
 	REGISTER_KMSG_HANDLER(PCN_KMSG_TYPE_VMA_OP_RESPONSE, vma_op_response);
 
 #ifdef CONFIG_POPCORN_HYPE
-//	hype_node_info = kmalloc(sizeof(struct hype_node_info_t) *
-//							MAX_POPCORN_NODES * MAX_POPCORN_FD, GFP_KERNEL);
 	SIGVPRINTK("%s(): init vma_server_init[][]\n", __func__);
 	for (i = 0; i < MAX_POPCORN_NODES; i++)
 		for (j = 0; j < MAX_POPCORN_VCPU; j++) {
