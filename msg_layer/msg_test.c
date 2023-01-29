@@ -9,15 +9,9 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 
-//#include <popcorn/sync.h>
 #include "../../kernel/popcorn/types.h"
 #include "common.h"
 
-#ifdef CONFIG_X86_64
-//#define MAX_THREADS 16
-#else
-//#define MAX_THREADS 96
-#endif
 #define MAX_THREADS 288
 
 
@@ -128,229 +122,6 @@ static inline void __barrier_wait(struct test_barrier *barrier)
 	}
 }
 
-
-#if 0
-/* for mimicing RW */
-char *dummy_send_buf[MAX_NUM_NODES][MAX_THREADS];
-
-/* For testing RDMA READ/WRITE */
-char *dummy_act_buf[MAX_NUM_NODES][MAX_THREADS];
-char *dummy_pass_buf[MAX_NUM_NODES][MAX_THREADS];
-
-/* Buffers for testing RDMA RW */
-int g_remote_read_len = 8 * 1024;
-int g_rdma_write_len = 8 * 1024;
-char *g_test_buf = NULL;
-char *g_test_write_buf = NULL;
-
-#define RDMA_TEST_FIELDS \
-	int remote_ws; \
-	u64 dma_addr_act; \
-	u32 mr_id; \
-	int t_num;
-DEFINE_PCN_RDMA_KMSG(pcn_kmsg_perf_rdma_t, RDMA_TEST_FIELDS);
-
-struct mimic_rw_msg_request {
-	struct pcn_kmsg_hdr header;
-	int tid;
-	int remote_ws;
-	unsigned int size;
-	unsigned char payload[MAX_MSG_LENGTH];
-};
-
-struct mimic_rw_signal_request {
-	struct pcn_kmsg_hdr header;
-	int tid;
-	int remote_ws;
-	unsigned int size;
-};
-
-struct test_msg_response_t {
-	struct pcn_kmsg_hdr header;
-	int remote_ws;
-};
-
-static int handle_show_RW_dummy_buf(struct pcn_kmsg_message *inc_lmsg)
-{
-	_show_RW_dummy_buf(0);
-	pcn_kmsg_done(inc_lmsg);
-
-	return 0;
-}
-
-/*	FaRM
- * 	[we are here]
- *	compose
- *  send()
- *  *remap addr*
- *             ----->   irq (recv)
- *  poll                perform WRITE
- *  done				done
- *
- */
-/* Perf data */
-static int rdma_farm_test(unsigned int payload_size,
-							unsigned long long iter, int t)
-{
-	unsigned long long i, j;
-
-	for (j = 0; j < iter; j++) {
-		for (i = 0; i < MAX_NUM_NODES; i++) {
-			pcn_kmsg_perf_rdma_t *req_rdma;
-			if (my_nid == i) continue;
-
-			req_rdma = kmalloc(sizeof(*req_rdma), GFP_KERNEL);
-			BUG_ON(!req_rdma);
-
-			req_rdma->rdma_header.is_write = true;
-			req_rdma->rdma_header.your_buf_ptr = dummy_act_buf[i][t];
-
-			req_rdma->t_num = t;
-
-			pcn_kmsg_request_rdma(PCN_KMSG_TYPE_RDMA_WRITE_TEST_REQUEST,
-					i, req_rdma, sizeof(*req_rdma), payload_size);
-			kfree(req_rdma);
-			/* data is been written in dummy_act_buf[i][t] */
-		}
-	}
-	return 0;
-}
-
-static int kthread_rdma_farm_test(void* arg0)
-{
-	struct test_params* karg = arg0;
-	rdma_farm_test(karg->payload_size, karg->nr_iterations, karg->tid);
-	atomic_inc(karg->nr_done);
-	wake_up_interruptible(karg->wait_thread_sem);
-	return 0;
-}
-
-/*	FaRM with 1 extra mem copy
- * 	[we are here]
- *	compose
- *  send()
- *  *remap addr*
- *             ----->   irq (recv)
- *  poll                perform WRITE
- *  return act_buf		done
- *
- */
-/* real FaRM perf data */
-static int rdma_farm_mem_cpy_test(unsigned int payload_size,
-								unsigned long long iter, int t)
-{
-	unsigned long long i, j;
-	for (j = 0; j < iter; j++) {
-		for (i = 0; i < MAX_NUM_NODES; i++) {
-			char *act_buf;
-			pcn_kmsg_perf_rdma_t *req_rdma;
-			if (my_nid == i) continue;
-
-			req_rdma = kmalloc(sizeof(*req_rdma), GFP_KERNEL);
-			BUG_ON(!req_rdma);
-
-			//req_rdma->rdma_header.rmda_type_res =
-			//			PCN_KMSG_TYPE_RDMA_WRITE_TEST_RESPONSE;
-			//req_rdma->rdma_header.your_buf_ptr = dummy_act_buf[i][t];
-			req_rdma->rdma_header.is_write = true;
-
-			req_rdma->t_num = t; //xx also def
-			act_buf = pcn_kmsg_request_rdma(
-					PCN_KMSG_TYPE_RDMA_WRITE_TEST_REQUEST, i, req_rdma,
-					sizeof(*req_rdma), payload_size);
-			if (act_buf) {
-#if POPCORN_DEBUG_MSG_IB
-				int lengh = 0;
-
-				printk("%s(): head length is 0x%.2x %.2x %.2x %.2x "
-												"MUST BE %.8x(O)\n", __func__,
-																*(act_buf + 0),
-																*(act_buf + 1),
-																*(act_buf + 2),
-																*(act_buf + 3),
-													payload_size);
-				printk("%s(): is data 0x%.2x\n", __func__, *(act_buf + 4));
-				printk("%s(): last byte 0x%.2x\n",
-										__func__, *(act_buf+payload_size-1));
-
-				lengh += *(act_buf + 0) << 24;
-				lengh += *(act_buf + 1) << 16;
-				lengh += *(act_buf + 2) << 8;
-				lengh += *(act_buf + 3) << 0;
-				printk("%s(): return int %d payload_size %llu\n\n",
-											__func__, lengh, payload_size);
-#endif
-				//memcpy(dummy_act_buf[i][t], act_buf, payload_size); //usr time
-				pcn_kmsg_done(act_buf);
-			} else
-				printk(KERN_WARNING "%s(): recv size 0\n", __func__);
-
-			kfree(req_rdma);
-		}
-	}
-	return 0;
-}
-
-static int kthread_rdma_farm_mem_cpy_test(void* arg0)
-{
-	struct test_params* karg = arg0;
-	rdma_farm_mem_cpy_test(karg->payload_size, karg->nr_iterations, karg->tid);
-	atomic_inc(karg->nr_done);
-	wake_up_interruptible(karg->wait_thread_sem);
-	return 0;
-}
-
-/*	FaRM2
- * 	[we are here]
- *	compose
- *  send()
- *  *remap addr*
- *             ----->   irq (recv)
- *   	                perform WRITE
- *  poll                perform WRITE
- *  done				done
- *
- */
-/* real FaRM perf data */
-static int rdma_farm2_data(unsigned int payload_size,
-							unsigned long long iter, int t)
-{
-	unsigned long long i, j;
-	for (j = 0; j < iter; j++) {
-		for (i = 0; i < MAX_NUM_NODES; i++) {
-			pcn_kmsg_perf_rdma_t *req_rdma;
-			if (my_nid == i) continue;
-
-			req_rdma = kmalloc(sizeof(*req_rdma), GFP_KERNEL);
-			BUG_ON(!req_rdma);
-
-			req_rdma->rdma_header.is_write = true;
-			req_rdma->rdma_header.your_buf_ptr = dummy_act_buf[i][t];
-
-			req_rdma->t_num = t; //xx also def
-
-			pcn_kmsg_request_rdma(PCN_KMSG_TYPE_RDMA_WRITE_TEST_REQUEST,
-					i, req_rdma, sizeof(*req_rdma), payload_size);
-
-			/* data's been done in your_buf_ptr*/
-
-			//memcpy(dummy_act_buf[i][t], act_buf, payload_size); //usr time
-			kfree(req_rdma);
-		}
-	}
-	return 0;
-}
-
-static int kthread_rdma_farm2_data(void* arg0)
-{
-	struct test_params* karg = arg0;
-	rdma_farm2_data(karg->payload_size, karg->nr_iterations, karg->tid);
-	atomic_inc(karg->nr_done);
-	wake_up_interruptible(karg->wait_thread_sem);
-	return 0;
-}
-#endif
-
 /**
  * Fundamental performance tests
  */
@@ -360,8 +131,6 @@ static int test_send(void *arg)
 	struct test_params *param = arg;
 	DECLARE_COMPLETION_ONSTACK(done);
 	test_request_t *req = (void *)per_t_buf[param->tid];
-	//test_request_t *req;
-	//char buffer[256];
 	int i;
 	size_t msg_size = PCN_KMSG_SIZE(param->payload_size);
 
@@ -369,29 +138,13 @@ static int test_send(void *arg)
 
 	__barrier_wait(param->barrier);
 	for (i = 0; i < param->nr_iterations; i++) {
-#if 0
-		if (msg_size > sizeof(buffer)) {
-			//req = kmalloc(sizeof(msg_size), GFP_KERNEL); /* BUG */
-			req = kmalloc(msg_size, GFP_KERNEL);
-			BUG_ON(!req);
-		} else {
-			req = (void *)buffer;
-		}
-#endif
 		req->flags = 1;
-//		req->flags = 0;
-//		set_bit(TEST_REQUEST_FLAG_REPLY, &req->flags); // alignment fault on ARM
 		req->done = (unsigned long)&done;
 		*(unsigned long *)req->msg = 0xcafe00dead00beef;
 
 		pcn_kmsg_send(PCN_KMSG_TYPE_TEST_REQUEST, !my_nid, req, msg_size);
 
 		wait_for_completion(&done);
-#if 0
-		if (msg_size > sizeof(buffer)) {
-			kfree(req);
-		}
-#endif
 	}
 	__barrier_wait(param->barrier);
 	return 0;
@@ -409,8 +162,6 @@ static int test_post(void *arg)
 		req = pcn_kmsg_get(PCN_KMSG_SIZE(param->payload_size));
 
 		req->flags = 1;
-//		req->flags = 0;
-//		set_bit(TEST_REQUEST_FLAG_REPLY, &req->flags); // alignment fault on ARM
 		req->done = (unsigned long)&done;
 		*(unsigned long *)req->msg = 0xcafe00dead00beef;
 
@@ -495,40 +246,13 @@ static int test_rdma_dsm_rr(void *arg)
 	struct test_params *param = arg;
 
 #if LOCAL_RR_PAGE_TIME
-	/* TODO per t */
+	/* Workitem per t */
 	ktime_t dt1, t1e, t1s;
 	ktime_t t2e, t2s;
 	ktime_t t3e, t3s;
 	ktime_t t4e, t4s;
 	ktime_t t5e, t5s;
 	long long t2 = 0, t3 = 0, t4 = 0, t5 = 0;
-#endif
-
-#if 0
-    remote_page_response_t *rp;
-    struct wait_station *ws = get_wait_station(tsk);
-    struct pcn_kmsg_rdma_handle *rh = NULL;
-    remote_page_request_t *req; //
-
-	// t1: get send buffer/rdma buffer from pool
-    req = pcn_kmsg_get(sizeof(*req));
-	req->origin_ws = ws->ws_id;
-
-	rh = pcn_kmsg_pin_rdma_buffer(NULL, PAGE_SIZE);
-	if (IS_ERR(rh)) {
-		pcn_kmsg_put(req);
-		return PTR_ERR(rh);
-	}
-	req->rdma_addr = rh->dma_addr;
-	req->rdma_key = rh->rkey;
-
-	// t1
-
-	// t2
-    pcn_kmsg_post(PCN_KMSG_TYPE_REMOTE_PAGE_REQUEST, //
-					from_nid, req, sizeof(*req));
-	// t2 end
-    rp = wait_at_station(ws);
 #endif
 
 	/* write */
@@ -545,26 +269,20 @@ static int test_rdma_dsm_rr(void *arg)
 	req->rdma_key = rh->rkey;
 	req->size = param->payload_size;
 	req->done = (unsigned long)&done;
-	*(unsigned long *)rh->addr = 0xcafecaf00eadcafe; // touch. need?
-//	printk("[%d] %p sent ->\n", req->id, req);
+	*(unsigned long *)rh->addr = 0xcafecaf00eadcafe;
 	pcn_kmsg_post(PCN_KMSG_TYPE_TEST_RDMA_DSMRR_REQUEST,
 							!my_nid, req, sizeof(*req));
 	wait_for_completion(&done);
 	pcn_kmsg_unpin_rdma_buffer(rh);
-	//pcn_kmsg_put(req);
 
-//	printk("[%d] wait barrier\n", req->id);
 	__barrier_wait(param->barrier);
-//	printk("[%d] warmup done = benchmark start\n", req->id);
 #if LOCAL_RR_PAGE_TIME
 	t1s = ktime_get();
 #endif
 	for (i = 0; i < param->nr_iterations; i++) {
 #if LOCAL_RR_PAGE_TIME
-		// t2
 		t2s = ktime_get();
 #endif
-//		printk("[%d] iter %d\n", req->id, i);
 		req = pcn_kmsg_get(sizeof(*req));
 		rh = pcn_kmsg_pin_rdma_buffer(NULL, PAGE_SIZE);
 		req->rdma_addr = rh->dma_addr;
@@ -572,15 +290,12 @@ static int test_rdma_dsm_rr(void *arg)
 		req->size = param->payload_size;
 		req->done = (unsigned long)&done;
 		req->id = my_id;
-		//*(unsigned long *)rh->addr = 0xcafecaf00eadcafe; // touch. need?
 #if LOCAL_RR_PAGE_TIME
 		t2e = ktime_get();
 		t2 += ktime_to_ns(ktime_sub(t2e, t2s));
-		// t2
 #endif
 
 #if LOCAL_RR_PAGE_TIME
-		// t3
 		t3s = ktime_get();
 #endif
 		pcn_kmsg_post(PCN_KMSG_TYPE_TEST_RDMA_DSMRR_REQUEST,
@@ -588,40 +303,30 @@ static int test_rdma_dsm_rr(void *arg)
 #if LOCAL_RR_PAGE_TIME
 		t3e = ktime_get();
 		t3 += ktime_to_ns(ktime_sub(t3e, t3s));
-		// t3
 #endif
 
 #if LOCAL_RR_PAGE_TIME
-		// t4
 		t4s = ktime_get();
 #endif
 		wait_for_completion(&done);
 #if LOCAL_RR_PAGE_TIME
 		t4e = ktime_get();
 		t4 += ktime_to_ns(ktime_sub(t4e, t4s));
-		// t4
 #endif
 
 #if LOCAL_RR_PAGE_TIME
-		// t5
 		t5s = ktime_get();
 #endif
 		pcn_kmsg_unpin_rdma_buffer(rh);
-		//pcn_kmsg_put(req);
 #if LOCAL_RR_PAGE_TIME
 		t5e = ktime_get();
 		t5 += ktime_to_ns(ktime_sub(t5e, t5s));
-		// t5
 #endif
 	}
 #if LOCAL_RR_PAGE_TIME
 	t1e = ktime_get();
 	dt1 = ktime_sub(t1e, t1s);
-	//dt2 = ktime_sub(t2e, t2s);
-	//dt3 = ktime_sub(t3e, t3s);
-	//dt4 = ktime_sub(t4e, t4s);
-	//dt5 = ktime_sub(t5e, t5s);
-	/* TODO per t */
+	/* Workitem per t */
 	printk("%s(): dsm rr lat done %lld ns %lld us!!!\n",
 					__func__, ktime_to_ns(dt1) / param->nr_iterations,
 					ktime_to_ns(dt1) / param->nr_iterations / 1000);
@@ -642,49 +347,13 @@ static int test_rdma_dsm_rr(void *arg)
 	printk("\n\n");
 #endif
 
-	//
-	// send
-	//
-#if 0
-	struct test_params *param = arg;
-	DECLARE_COMPLETION_ONSTACK(done);
-	test_request_t *req;
-	int i;
-	char buffer[256];
-	size_t msg_size = PCN_KMSG_SIZE(param->payload_size);
-
-	__barrier_wait(param->barrier);
-	for (i = 0; i < param->nr_iterations; i++) {
-		if (msg_size > sizeof(buffer)) {
-			req = kmalloc(sizeof(msg_size), GFP_KERNEL);
-			BUG_ON(!req);
-		} else {
-			req = (void *)buffer;
-		}
-
-		req->flags = 0;
-		set_bit(TEST_REQUEST_FLAG_REPLY, &req->flags);
-		req->done = (unsigned long)&done;
-		*(unsigned long *)req->msg = 0xcafe00dead00beef;
-
-		pcn_kmsg_send(PCN_KMSG_TYPE_TEST_REQUEST, !my_nid, req, msg_size);
-
-		wait_for_completion(&done);
-		if (msg_size > sizeof(buffer)) {
-			kfree(req);
-		}
-	}
-	__barrier_wait(param->barrier);
-#endif
 	__barrier_wait(param->barrier);
 	return 0;
 }
 
 static int test_clear_all(void *arg)
 {
-	//printk("remove me: cnt brfore = %d\n", cnt);
 	cnt = 0;
-	//printk("remove me: cnt after = %d\n", cnt);
 	return 0;
 }
 
@@ -694,18 +363,6 @@ void *_buffer[MAX_POPCORN_THREADS] = {NULL}; /* For RDMA write */
 #define ONE_M 1000000
 static void process_test_dsmrr_request(struct work_struct *work)
 {
-
-//  send example from DSM
-//	START_KMSG_WORK(test_request_t, req, work);
-//	if (test_bit(TEST_REQUEST_FLAG_REPLY, &req->flags)) {
-//		test_response_t *res = pcn_kmsg_get(sizeof(*res));
-//		res->done = req->done;
-//
-//		pcn_kmsg_post(PCN_KMSG_TYPE_TEST_RESPONSE,
-//				PCN_KMSG_FROM_NID(req), res, sizeof(*res));
-//	}
-//	END_KMSG_WORK(req);
-
 	int ret;
 	START_KMSG_WORK(test_dsmrr_request_t, req, work);
 	test_page_response_t *res;
@@ -717,57 +374,40 @@ static void process_test_dsmrr_request(struct work_struct *work)
 	static long long t2 = 0, t3 = 0, t4 = 0, t5 = 0;
 #endif
 
-//	printk("->-> recv 4 [%d]\n", req->id);
-
 #if REMOTE_HANDLE_WRITE_TIME
-	// tr2
 	t2s = ktime_get();
 #endif
-	//res = kmalloc(sizeof(*res), GFP_KERNEL);
 	res = pcn_kmsg_get(sizeof(*res));
 	res->done = req->done;
 	res->id = req->id;
 #if REMOTE_HANDLE_WRITE_TIME
-	//*(unsigned long *)_buffer = 0xbaffdeafbeefface; // touch. need?
 	t2e = ktime_get();
-	// tr2
 #endif
 
 #if REMOTE_HANDLE_WRITE_TIME
-	//tr3: directly any kernel_vaddr
 	t3s = ktime_get();
 #endif
 	ret = pcn_kmsg_rdma_write(PCN_KMSG_FROM_NID(req),
 			req->rdma_addr, _buffer[req->id], req->size, req->rdma_key);
 #if REMOTE_HANDLE_WRITE_TIME
 	t3e = ktime_get();
-	//tr3
 #endif
 
 #if REMOTE_HANDLE_WRITE_TIME
-	//tr4
 	t4s = ktime_get();
 #endif
 	pcn_kmsg_post(PCN_KMSG_TYPE_TEST_RDMA_DSMRR_RESPONSE,
-	//pcn_kmsg_send(PCN_KMSG_TYPE_TEST_RDMA_DSMRR_RESPONSE,
 					PCN_KMSG_FROM_NID(req), res, sizeof(*res));
-//	printk("<-<- response 4 [%d]\n", req->id);
 #if REMOTE_HANDLE_WRITE_TIME
 	t4e = ktime_get();
-	// had put *res
-	//tr4
 #endif
 
 #if REMOTE_HANDLE_WRITE_TIME
-	//tr5
-	//free_page((unsigned long)_buffer);
 	t5s = ktime_get();
 #endif
-	//pcn_kmsg_put(res);
 	END_KMSG_WORK(req);
 #if REMOTE_HANDLE_WRITE_TIME
 	t5e = ktime_get();
-	//tr5
 #endif
 
 #if REMOTE_HANDLE_WRITE_TIME
@@ -804,14 +444,10 @@ static void process_test_dsmrr_request(struct work_struct *work)
 
 static int handle_test_dsmrr_response(struct pcn_kmsg_message *msg)
 {
-	//t5
 	test_page_response_t *res = (test_page_response_t *)msg;
-//	printk("-> recv response 4 [%d] \n", res->id);
 	if (res->done) {
-//		printk("-> recv response 4 comp* [%d]\n", res->id);
 		complete((struct completion *)res->done);
 	}
-	//t5
 	pcn_kmsg_done(res);
 	return 0;
 }
@@ -899,11 +535,7 @@ static void __run_test(enum test_action action, struct test_params *param)
 
 	elapsed = ktime_to_ns(ktime_sub(t_end, t_start));
 
-	//printk("Done testing %s\n", tests[action].description);
 	printk("  %9lu ns in total\n", elapsed);
-	//printk("  %3lu.%05lu ns per operation\n",
-	//		elapsed / param->nr_iterations,
-	//		(elapsed % param->nr_iterations) * 1000 /  param->nr_iterations);
 	printk("lat: %3lu.%05lu us per operation\n",
 		elapsed / param->nr_iterations / 1000,
 		((elapsed % param->nr_iterations) * 1000 * 1000) /
