@@ -78,7 +78,6 @@
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
 static unsigned long vblock = 0;
 #endif
-//#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
 #if defined(CONFIG_POPCORN_HYPE) && (POPHYPE_MIGRATE_DEBUG || HYPEBOOTDEBUG)
 #define VCPU_BLOCK_SHOW_LIMIT 100
 #endif
@@ -302,11 +301,6 @@ static void drop_user_return_notifiers(void)
 
 u64 kvm_get_apic_base(struct kvm_vcpu *vcpu)
 {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	// many
-	//printk("[diff] <%d> %s(): GET vcpu->arch.apic_base %lx\n",
-	//				__func__, vcpu->vcpu_id, vcpu->arch.apic_base);
-#endif
 	return vcpu->arch.apic_base;
 }
 EXPORT_SYMBOL_GPL(kvm_get_apic_base);
@@ -320,12 +314,6 @@ int kvm_set_apic_base(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	u64 reserved_bits = ((~0ULL) << cpuid_maxphyaddr(vcpu)) |
 		0x2ff | (guest_cpuid_has_x2apic(vcpu) ? 0 : X2APIC_ENABLE);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	PHAPICPRINTK("[diff] <%d> %s(): SET (msr_data) host_initiated %d index %x data %llx\n",
-				vcpu->vcpu_id, __func__, msr_info->host_initiated,
-				msr_info->index, msr_info->data);
-	//dump_stack();
-#endif
 	if (!msr_info->host_initiated &&
 	    ((msr_info->data & reserved_bits) != 0 ||
 	     new_state == X2APIC_ENABLE ||
@@ -6755,20 +6743,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 
 	bool req_immediate_exit = false;
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	static int first[4] = {1, 1, 1, 1}; /* TODO MAX_VCPU*/
-	static int first_start_mm_reload[4] = {1, 1, 1, 1}; /* TODO MAX_VCPU*/
-	static int first_end_mm_reload[4] = {1, 1, 1, 1}; /* TODO MAX_VCPU*/
-
-	if (first[vcpu->vcpu_id]) {
-		first[vcpu->vcpu_id] = 0;
-		PHMIGRATEPRINTK(" [ck]%s %s(): <%d>:\n",
-						__FILE__, __func__, vcpu->vcpu_id);
-		//PHMIGRATEPRINTK("vcpu->arch.mmu.pae_root %p\n", vcpu->arch.mmu.pae_root); // don't care pae_root
-		PHMIGRATEPRINTK("vcpu->arch.mmu.root_hpa %llx\n", vcpu->arch.mmu.root_hpa);
-	}
-#endif
-
 	if (vcpu->requests) {
 		if (kvm_check_request(KVM_REQ_MMU_RELOAD, vcpu))
 			kvm_mmu_unload(vcpu);
@@ -6845,32 +6819,26 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			goto out;
 		}
 #ifdef CONFIG_POPCORN_HYPE
-////////////////////////////////////////////////////////////////////////
 		if (kvm_check_request(KVM_REQ_VCPU_MIGRATION, vcpu)) {
 			SIGVPRINTK("\t\t[%d] %s(): goin to vm exit vcpu<%d> "
 						"with KVM_EXIT_REQ_POPHYPE_MIGRATE\n",
 							current->pid, __func__, vcpu->vcpu_id);
 			vcpu->run->exit_reason = KVM_EXIT_REQ_POPHYPE_MIGRATE;
-			//vcpu->run->exit_reason = KVM_EXIT_SYSTEM_EVENT;
-			r = 0; // 0: to user space 1: to kernel space
+			r = 0; /* 0: to user space 1: to kernel space */
 			goto out;
 		}
-////////////////////////////////////////////////////////////////////////
 #endif
 	}
 
 #ifdef CONFIG_POPCORN_HYPE
-////////////////////////////////////////////////////////////////////////
 	if (kvm_check_request(KVM_REQ_VCPU_MIGRATION, vcpu)) {
 		SIGVPRINTK("\t\ttesting or here [%d] %s(): goin to vm exit vcpu<%d> "
 					"with KVM_EXIT_REQ_POPHYPE_MIGRATE\n",
 						current->pid, __func__, vcpu->vcpu_id);
 		vcpu->run->exit_reason = KVM_EXIT_REQ_POPHYPE_MIGRATE;
-		//vcpu->run->exit_reason = KVM_EXIT_SYSTEM_EVENT;
-		r = 0; // 0: to user space 1: to kernel space
+		r = 0; /* 0: to user space 1: to kernel space */
 		goto out;
 	}
-////////////////////////////////////////////////////////////////////////
 #endif
 
 	/*
@@ -6894,10 +6862,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			goto out;
 		}
 
-#ifdef CONFIG_POPCORN_HYPE
-		// check above, inject below
-#endif
-
 		/* check if a INT comes */
 		if (inject_pending_event(vcpu, req_int_win) != 0)
 			req_immediate_exit = true;
@@ -6914,14 +6878,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			kvm_lapic_sync_to_vapic(vcpu);
 		}
 	}
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	if (first_start_mm_reload[vcpu->vcpu_id]) {
-		first_start_mm_reload[vcpu->vcpu_id] = 0;
-		PHMIGRATEPRINTK(" === %s %s(): <%d> ckpt kvm_mmu_reload start (load guest cr3)\n",
-											__FILE__, __func__, vcpu->vcpu_id);
-		PHMIGRATEPRINTK("%s(): CR3 = 0x%016lx\n", __func__, kvm_x86_ops->pophype_vmcs_readl(GUEST_CR3));
-	}
-#endif
 
 	r = kvm_mmu_reload(vcpu);
 	if (unlikely(r)) {
@@ -6930,23 +6886,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 
 	preempt_disable();
 
-#if defined(CONFIG_POPCORN_HYPE)  && POPHYPE_MIGRATE_DEBUG
-	if (first_end_mm_reload[vcpu->vcpu_id]) {
-		first_end_mm_reload[vcpu->vcpu_id] = 0;
-		PHMIGRATEPRINTK(" === %s %s(): <%d> ckpt kvm_mmu_reload done (load guest cr3)\n",
-											__FILE__, __func__, vcpu->vcpu_id);
-		PHMIGRATEPRINTK("%s(): CR3 = 0x%016lx\n", __func__, kvm_x86_ops->pophype_vmcs_readl(GUEST_CR3));
-	}
-	/* prepare to guest mode - save host state:
-		vmx_save_host_state() in arch/x86/kvm/vmx.c
-		vmx->* = kvm
-		vmx->* = host_states e.g., segments fs/gs/ds/es
-			e.g. savesegment(gs, vmx->host_state.gs_sel);
-					-> save segments to vmx->host_state.gs_sel
-		vmcs_writel();
-		Note: opposiete = vmx_load_host_state()
-	*/
-#endif
 	kvm_x86_ops->prepare_guest_switch(vcpu);
 	if (vcpu->fpu_active)
 		kvm_load_guest_fpu(vcpu);
@@ -6991,15 +6930,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		vcpu->arch.switch_db_regs &= ~KVM_DEBUGREG_RELOAD;
 	}
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	{	/* vmx_vcpu_run */
-		static unsigned long cnt = 0;
-		cnt++;
-		if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT || !(cnt % 100000))
-			HPPRINTK("[%d] %s: kvm_x86_ops->run (too verbose) #%lu\n",
-										current->pid, __func__, cnt);
-	}
-#endif
 	kvm_x86_ops->run(vcpu);
 
 	/*
@@ -7067,15 +6997,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	if (vcpu->arch.apic_attention)
 		kvm_lapic_sync_from_vapic(vcpu);
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	{	/* vmx_handle_exit */
-		static unsigned long cnt = 0;
-		cnt++;
-		if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT || !(cnt % 100000))
-			HPPRINTK("[%d] %s: 8 kvm_x86_ops->handle_exit "
-				"(too verbose) #%lu\n", current->pid, __func__, cnt);
-	}
-#endif
 	r = kvm_x86_ops->handle_exit(vcpu); /* 48 ept fault 1:good */
 	return r;
 
@@ -7088,7 +7009,6 @@ out:
 }
 
 #if defined(CONFIG_POPCORN_HYPE)
-/* debug */
 int pophype_peek_vcpu_enter_guest(struct kvm_vcpu *vcpu)
 {
 	printk("\n\n%s(): ------- before-enter peek start -------\n", __func__);
@@ -7153,13 +7073,14 @@ int pophype_peek_vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	printk("\n");
 
 	{
-	bool req_int_win = dm_request_for_irq_injection(vcpu) && kvm_cpu_accept_dm_intr(vcpu);
-	printk("%s(): KVM_REQ_EVENT %d || req_int_win %d = %d (!=)\n", __func__,
-										kvm_check_request(KVM_REQ_EVENT, vcpu), req_int_win,
-										kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win);
+		bool req_int_win =
+			dm_request_for_irq_injection(vcpu) && kvm_cpu_accept_dm_intr(vcpu);
+		printk("%s(): KVM_REQ_EVENT %d || req_int_win %d = %d (!=)\n", __func__,
+						kvm_check_request(KVM_REQ_EVENT, vcpu), req_int_win,
+						kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win);
 	}
 	printk("\t\t vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED %d\n",
-										vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED);
+						vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED);
 	printk("\t\t TODO int\n");
 	printk("\t\t TODO nmi\n");
 	printk("\t\t TODO lapic_enable\n");
@@ -7169,15 +7090,6 @@ int pophype_peek_vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	printk("%s(): kvm_mmu_reload\n", __func__);
 	printk("%s(): kvm_x86_ops->prepare_guest_switch(vcpu);\n", __func__);
 	printk("\n");
-
-
-	printk("%s(): TODO\n", __func__);
-#if 0
-	printk("\t\t %d\n",
-	printk("\t\t %d\n",
-	printk("%s(): \n", __func__, );
-	printk("%s(): \n", __func__, );
-#endif
 
 	printk("%s(): ------- before-enter peek end -------\n\n", __func__);
 	return 0;
@@ -7199,18 +7111,12 @@ static inline int vcpu_block(struct kvm *kvm, struct kvm_vcpu *vcpu)
 			return 1;
 	}
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-//	// <0> many, so only count for remote
-//	if (distributed_remote_process(current))
-//		vblock++;
-#endif
 	kvm_apic_accept_events(vcpu);
 	switch(vcpu->arch.mp_state) {
 	case KVM_MP_STATE_HALTED:
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-		// 0 a lot
 		if (vcpu->vcpu_id && vblock < VCPU_BLOCK_SHOW_LIMIT) {
-			vblock++; // for testing vanilla (stop printing)
+			vblock++;
 			PHMIGRATEPRINTK("<%d> %s(): KVM_MP_STATE_HALTED "
 					"(vcpu->arch.pv.pv_unhalted %d =w> false) #%lu/%d\n",
 					vcpu->vcpu_id, __func__, vcpu->arch.pv.pv_unhalted,
@@ -7222,9 +7128,8 @@ static inline int vcpu_block(struct kvm *kvm, struct kvm_vcpu *vcpu)
 			KVM_MP_STATE_RUNNABLE;
 	case KVM_MP_STATE_RUNNABLE:
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-		// 0 a lot
 		if (vcpu->vcpu_id && vblock < VCPU_BLOCK_SHOW_LIMIT) {
-			vblock++; // for testing vanilla (stop printing)
+			vblock++;
 			PHMIGRATEPRINTK("<%d> %s(): KVM_MP_STATE_RUNNABLE #%lu/%d\n",
 					vcpu->vcpu_id, __func__, vblock, VCPU_BLOCK_SHOW_LIMIT);
 		}
@@ -7233,9 +7138,8 @@ static inline int vcpu_block(struct kvm *kvm, struct kvm_vcpu *vcpu)
 		break;
 	case KVM_MP_STATE_INIT_RECEIVED:
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-		// 0 a lot
 		if (vcpu->vcpu_id && vblock < VCPU_BLOCK_SHOW_LIMIT) {
-			vblock++; // for testing vanilla
+			vblock++;
 			PHMIGRATEPRINTK("<%d> %s(): KVM_MP_STATE_INIT_RECEIVED #%lu/%d\n",
 					vcpu->vcpu_id, __func__, vblock, VCPU_BLOCK_SHOW_LIMIT);
 		}
@@ -7254,8 +7158,8 @@ static inline bool kvm_vcpu_running(struct kvm_vcpu *vcpu)
 		!vcpu->arch.apf.halted);
 }
 
-#if defined(CONFIG_POPCORN_HYPE) // used in vma_server
-int first[MAX_POPCORN_NODES] = { 1 };
+#if defined(CONFIG_POPCORN_HYPE)
+int first[MAX_POPCORN_NODES] = { 1 }; /* used in vma_server */
 #endif
 static int vcpu_run(struct kvm_vcpu *vcpu)
 {
@@ -7266,23 +7170,8 @@ static int vcpu_run(struct kvm_vcpu *vcpu)
 	vcpu->srcu_idx = srcu_read_lock(&kvm->srcu);
 
 	for (;;) {
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-//		if (first[vcpu->vcpu_id]) {
-//			first[vcpu->vcpu_id] = 0;
-//		}
-#endif
 		if (kvm_vcpu_running(vcpu)) {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-			static unsigned long cnt = 0;
-			cnt++;
-			if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT || !(cnt % 100000))
-				HPPRINTK("[%d] %s: vcpu_enter_guest (too verbose) #%lu\n",
-											current->pid, __func__, cnt);
-#endif
 			r = vcpu_enter_guest(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-			/* vm-exit */
-#endif
 		} else {
 			/* run may also blocks */
 			r = vcpu_block(kvm, vcpu);
@@ -7413,34 +7302,17 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 
 	fpu__activate_curr(fpu);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	//HPPRINTK("<%d> %s: 2-0\n", current->pid, __func__);
-#endif
 	if (vcpu->sigset_active)
 		sigprocmask(SIG_SETMASK, &vcpu->sigset, &sigsaved);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	//HPPRINTK("<%d> %s: 2-1 remote thread 88\n", current->pid, __func__);
-#endif
 	if (unlikely(vcpu->arch.mp_state == KVM_MP_STATE_UNINITIALIZED)) {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		KVMCLOCKPK("(run)\t\t#kvm_once [%d]<%d>: I'm an AP - IN blocking\n",
-											current->pid, vcpu->vcpu_id);
-#endif
 		kvm_vcpu_block(vcpu);
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		KVMCLOCKPK("(run)\t\t#kvm_once [%d]<%d>: I'm an AP - OUT got kicked out\n",
-												current->pid, vcpu->vcpu_id);
-#endif
 		kvm_apic_accept_events(vcpu); // got injected int here
 		clear_bit(KVM_REQ_UNHALT, &vcpu->requests);
 		r = -EAGAIN;
 		goto out;
 	}
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	//HPPRINTK("<%d> %s: 2-2\n", current->pid, __func__);
-#endif
 	/* re-sync apic's tpr */
 	if (!lapic_in_kernel(vcpu)) {
 		if (kvm_set_cr8(vcpu, kvm_run->cr8) != 0) {
@@ -7458,112 +7330,36 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 	} else
 		WARN_ON(vcpu->arch.pio.count || vcpu->mmio_needed);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	//HPPRINTK("<%d> %s: 3 vcpu_run\n", current->pid, __func__);
-#endif
 	r = vcpu_run(vcpu);
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* Better to put on cacller's end - this place is arch specific */
-
-	/* My original thought - remote BSP exit path */
-
-	/* Convert VM_EXIT negative (cannot handle) to exit_reason
-									for userspace to handle it */
-	/* Moved r == KVM_RET_POPHYPE_MIGRATE to the end since pophype migration */
-
-
-
-
-#ifdef CONFIG_POPCORN_STAT
-	/* remote dbg */
-	if (current->at_remote) {
-		static unsigned int remote_first_300 = 0;
-		remote_first_300++;
-		if (remote_first_300 < 10) {
-			printk("\t[%d/%d] <%d> remote first exit_reason %u #%u\n", // 2 printf
-						current->at_remote ? 1:0,
-						current->pid, vcpu->vcpu_id,
-						vcpu->run->exit_reason, remote_first_300);
-		} else if (vcpu->run->exit_reason != KVM_EXIT_IO && current->at_remote) { // 2 (e.g. printf)
-			if (vcpu->run->exit_reason == KVM_EXIT_INTERNAL_ERROR) { //17-3 KVM_INTERNAL_ERROR_DELIVERY_EV
-				static unsigned int exit_17_cnt = 0;
-				exit_17_cnt++;
-				if (exit_17_cnt < 150) {
-					//printk("\t<%d/%d/%d> vcpu->run [[[%p]]] "
-					printk("\t[%d/%d]<%d> "
-							"remote exit_reason %u-%u-%llu(deliver_ev) #%u\n",
-							current->pid, current->at_remote ? 1:0, vcpu->vcpu_id,
-							//vcpu->run,
-							vcpu->run->exit_reason,
-							vcpu->run->internal.suberror,
-							vcpu->run->internal.data[1],
-							exit_17_cnt);
-				}
-				/* testing enforce to touch uaddr mem */
-			} else if (vcpu->run->exit_reason != KVM_EXIT_POPHYPE_MIGRATE) {
-				static unsigned int exit_remote_not_2_17_cnt = 0;
-				exit_remote_not_2_17_cnt++;
-				if (exit_remote_not_2_17_cnt < 150) {
-					printk("\t[%d/%d]<%d> remote exit %u #%u\n",
-								current->pid, current->at_remote ? 1:0, vcpu->vcpu_id,
-								vcpu->run->exit_reason, exit_remote_not_2_17_cnt);
-				}
-			}
-		}
-	} /* remote dbg done */
-
-	/* Vanilla */
-	if (!current->mm->remote && vcpu->vcpu_id) { /* homo vcpu1 */
-		static unsigned int exit_homo_cnt = 0;
-		exit_homo_cnt++;
-		if (exit_homo_cnt > 0 && exit_homo_cnt < 300) {
-			//printk("\t<%d/%d/%d> vcpu->run [[[%p]]] ->run->exit_reason %u #%u\n",
-			printk("\t[%d/%d]<%d> ->run->exit_reason %u #%u\n",
-					current->pid, current->at_remote ? 1:0, vcpu->vcpu_id,
-					//vcpu->run,
-					vcpu->run->exit_reason, exit_homo_cnt);
-		}
-	}
-#endif
-#endif
 out:
 	post_kvm_run_save(vcpu);
 	if (vcpu->sigset_active)
 		sigprocmask(SIG_SETMASK, &sigsaved, NULL);
 
 #ifdef CONFIG_POPCORN_HYPE
-	/* Pophype migrate: overwirte reason */
-	/* save and transfer vCPU kernel states
-		and use userspace migration to finish the migration */
+	/* Pophype migrate: overwirte reason
+	 * 		Save and transfer vCPU kernel states
+	 * 		and use userspace migration to finish the migration.
+	 */
 	if (r == KVM_RET_POPHYPE_MIGRATE) {
-		vcpu->run->exit_reason = KVM_EXIT_POPHYPE_MIGRATE; // pophype migration
-		{ int z;
-			PHMIGRATEPRINTK("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-			for (z = 0; z < 5; z++)
-				PHMIGRATEPRINTK("=============== "
-							"[debug] KVM_EXIT_POPHYPE_MIGRATE start [debug] "
-							"==========================\n");
-			PHMIGRATEPRINTK("\n\n");
-		}
+		vcpu->run->exit_reason = KVM_EXIT_POPHYPE_MIGRATE;
 
-		/******/
-		/* save state for pophype migration */
-		/******/
-		/* uhype states */
-		pophype_save_vcpu_states(vcpu); // pophype migration
+		/* save uhype states */
+		pophype_save_vcpu_states(vcpu);
 
 		/* check state */
 		kvm_x86_ops->pophype_check_vmcs(vcpu);
-		pophype_dump_vmcs(); // debug TODO remove when done
+		pophype_dump_vmcs();
 		PHMIGRATEPRINTK("%s(): kvm_lapic_enabled %d (!=) = "
 				"kvm_apic_present(vcpu) %d && "
 				"kvm_apic_sw_enabled(vcpu->arch.apic) %d\n",
 				__func__, kvm_lapic_enabled(vcpu),
 				kvm_apic_present(vcpu), kvm_apic_sw_enabled(vcpu->arch.apic));
-		PHMIGRATEPRINTK("%s(): kvm_apic_present(vcpu) = kvm_vcpu_has_lapic(vcpu) %d "
-				"&& kvm_apic_hw_enabled(vcpu->arch.apic) %d\n", __func__,
-				kvm_vcpu_has_lapic(vcpu), kvm_apic_hw_enabled(vcpu->arch.apic));
+		PHMIGRATEPRINTK("%s(): kvm_apic_present(vcpu) = "
+			"kvm_vcpu_has_lapic(vcpu) %d "
+			"&& kvm_apic_hw_enabled(vcpu->arch.apic) %d\n", __func__,
+			kvm_vcpu_has_lapic(vcpu), kvm_apic_hw_enabled(vcpu->arch.apic));
 
 		PHMIGRATEPRINTK("[pophypemigrate] ****** "
 						"<%d> vcpu->run->apic_base %llx ******\n",
@@ -7590,18 +7386,7 @@ out:
 				kvm_register_read(vcpu, VCPU_REGS_R10)
 #endif
 		);
-		PHMIGRATEPRINTK("I don't think post_kvm_run_save() is important\n");
 		popcorn_show_gcpu_table();
-		{ int z;
-			for (z = 0; z < 5; z++) {
-				PHMIGRATEPRINTK("================= "
-								"[debug] KVM_EXIT_POPHYPE_MIGRATE end [debug] "
-								"=========================\n");
-			}
-		}
-		PHMIGRATEPRINTK("================= "
-						"[debug] KVM_EXIT_POPHYPE_MIGRATE end [debug] "
-						"=========================\n\n\n\n\n\n\n\n");
 	}
 #endif
 
@@ -7740,178 +7525,6 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
 		set_bit(vcpu->arch.interrupt.nr,
 			(unsigned long *)sregs->interrupt_bitmap);
 
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	PHMIGRATEPRINTK("\n---------- %s(): save sregs start ----------\n", __func__);
-	PHMIGRATEPRINTK("[save] get sregs->idt 0x%llx [size %d] gdt 0x%llx [size %d]\n",
-					sregs->idt.base, sregs->idt.limit,
-					sregs->gdt.base, sregs->gdt.limit);
-
-	PHMIGRATEPRINTK("[save] get sregs->cr2 0x%llx sregs->cr3 0x%llx sregs->cr8 0x%llx\n",
-						sregs->cr2, sregs->cr3, sregs->cr8);
-	PHMIGRATEPRINTK("[save] get sregs->efer 0x%llx", sregs->efer);
-	PHMIGRATEPRINTK("[save] get sregs->apic_base 0x%llx\n", sregs->apic_base);
-	PHMIGRATEPRINTK("[save] get sregs->cr0 0x%llx sregs->cr4 0x%llx\n",
-						sregs->cr0, sregs->cr4);
-
-
-	PHMIGRATEPRINTK("(done) get sregs->cs 0x%llx ds 0x%llx es 0x%llx "
-					"fs 0x%llx gs 0x%llx ss 0x%llx     "
-					"tr 0x%llx ldt 0x%llx\n",
-					sregs->cs.base, sregs->ds.base, sregs->es.base,
-					sregs->fs.base, sregs->gs.base, sregs->ss.base,
-					sregs->tr.base, sregs->ldt.base);
-
-	PHMIGRATEPRINTK("[!saved/cached] (vcpu) %s(): <%d> "
-					"vcpu->arch.apic_base 0x%llx\n",
-					__func__, vcpu->vcpu_id, vcpu->arch.apic_base);
-	PHMIGRATEPRINTK("[!saved/cached] (vcpu) %s(): <%d> get vcpu->arch.mp_state %d\n",
-						__func__, vcpu->vcpu_id, vcpu->arch.mp_state);
-	// TODO interrupt_bitmap
-	PHMIGRATEPRINTK("[!saved/cached] (vcpu) %s(): <%d> get vcpu->arch.interrupt.pending %d\n",
-						__func__, vcpu->vcpu_id, vcpu->arch.interrupt.pending);
-	PHMIGRATEPRINTK("---------- %s(): save sregs end ----------\n\n", __func__);
-#endif
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	PHMIGRATEPRINTK("[seg] set base 64 cs 0x%llx ds 0x%llx es 0x%llx "
-					"fs 0x%llx gs 0x%llx ss 0x%llx     "
-					"tr 0x%llx ldt 0x%llx (done)\n",
-					sregs->cs.base, sregs->ds.base, sregs->es.base,
-					sregs->fs.base, sregs->gs.base, sregs->ss.base,
-					sregs->tr.base, sregs->ldt.base);
-	PHMIGRATEPRINTK("[seg] set limit 32 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.limit,
-					sregs->ds.limit,
-					sregs->es.limit,
-					sregs->fs.limit,
-					sregs->gs.limit,
-					sregs->ss.limit,
-					sregs->tr.limit,
-					sregs->ldt.limit);
-	PHMIGRATEPRINTK("[seg] set selector 16 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.selector,
-					sregs->ds.selector,
-					sregs->es.selector,
-					sregs->fs.selector,
-					sregs->gs.selector,
-					sregs->ss.selector,
-					sregs->tr.selector,
-					sregs->ldt.selector);
-	PHMIGRATEPRINTK("[seg] set type 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.type,
-					sregs->ds.type,
-					sregs->es.type,
-					sregs->fs.type,
-					sregs->gs.type,
-					sregs->ss.type,
-					sregs->tr.type,
-					sregs->ldt.type);
-	PHMIGRATEPRINTK("[seg] set unusable 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.unusable,
-					sregs->ds.unusable,
-					sregs->es.unusable,
-					sregs->fs.unusable,
-					sregs->gs.unusable,
-					sregs->ss.unusable,
-					sregs->tr.unusable,
-					sregs->ldt.unusable);
-	PHMIGRATEPRINTK("[seg] set padding 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.padding,
-					sregs->ds.padding,
-					sregs->es.padding,
-					sregs->fs.padding,
-					sregs->gs.padding,
-					sregs->ss.padding,
-					sregs->tr.padding,
-					sregs->ldt.padding);
-	PHMIGRATEPRINTK("[seg] set present 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.present,
-					sregs->ds.present,
-					sregs->es.present,
-					sregs->fs.present,
-					sregs->gs.present,
-					sregs->ss.present,
-					sregs->tr.present,
-					sregs->ldt.present);
-	PHMIGRATEPRINTK("[seg] set dpl 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.dpl,
-					sregs->ds.dpl,
-					sregs->es.dpl,
-					sregs->fs.dpl,
-					sregs->gs.dpl,
-					sregs->ss.dpl,
-					sregs->tr.dpl,
-					sregs->ldt.dpl);
-	PHMIGRATEPRINTK("[seg] set db 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.db,
-					sregs->ds.db,
-					sregs->es.db,
-					sregs->fs.db,
-					sregs->gs.db,
-					sregs->ss.db,
-					sregs->tr.db,
-					sregs->ldt.db);
-	PHMIGRATEPRINTK("[seg] set s 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.s,
-					sregs->ds.s,
-					sregs->es.s,
-					sregs->fs.s,
-					sregs->gs.s,
-					sregs->ss.s,
-					sregs->tr.s,
-					sregs->ldt.s);
-	PHMIGRATEPRINTK("[seg] set l 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.l,
-					sregs->ds.l,
-					sregs->es.l,
-					sregs->fs.l,
-					sregs->gs.l,
-					sregs->ss.l,
-					sregs->tr.l,
-					sregs->ldt.l);
-	PHMIGRATEPRINTK("[seg] set g 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.g,
-					sregs->ds.g,
-					sregs->es.g,
-					sregs->fs.g,
-					sregs->gs.g,
-					sregs->ss.g,
-					sregs->tr.g,
-					sregs->ldt.g);
-	PHMIGRATEPRINTK("[seg] set avl 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.avl,
-					sregs->ds.avl,
-					sregs->es.avl,
-					sregs->fs.avl,
-					sregs->gs.avl,
-					sregs->ss.avl,
-					sregs->tr.avl,
-					sregs->ldt.avl);
-#endif
-
 	return 0;
 }
 
@@ -7945,10 +7558,6 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
 		vcpu->arch.mp_state = KVM_MP_STATE_INIT_RECEIVED;
 		set_bit(KVM_APIC_SIPI, &vcpu->arch.apic->pending_events);
 	} else {
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-		PHMIGRATEPRINTK("<%d> %s(): vcpu->arch.mp_state %d =w> %d\n",
-			vcpu->vcpu_id, __func__, vcpu->arch.mp_state, mp_state->mp_state);
-#endif
 		vcpu->arch.mp_state = mp_state->mp_state;
 	}
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
@@ -7960,10 +7569,6 @@ int kvm_task_switch(struct kvm_vcpu *vcpu, u16 tss_selector, int idt_index,
 {
 	struct x86_emulate_ctxt *ctxt = &vcpu->arch.emulate_ctxt;
 	int ret;
-#if defined(CONFIG_POPCORN_HYPE)
-	PHMIGRATEPRINTK("<%d> %s(): maybe important for pophype migration\n",
-				vcpu->vcpu_id, __func__);
-#endif
 
 	init_emulate_ctxt(vcpu);
 
@@ -7988,24 +7593,13 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 	int pending_vec, max_bits, idx;
 	struct desc_ptr dt;
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	PHMIGRATEPRINTK("\n---------- %s(): SET start ----------\n", __func__);
-    VCPUPRINTK("(vcpu) %s: <%d> (vcpu->cpu %d) set sregs for vcpu "
-				"!guest_cpuid_has_xsave(vcpu) %s && "
-				"(sregs->cr4 & X86_CR4_OSXSAVE) %s\n",
-				__func__, vcpu->vcpu_id, vcpu->cpu,
-				!guest_cpuid_has_xsave(vcpu) ? "O" : "X",
-				(sregs->cr4 & X86_CR4_OSXSAVE) ? "O" : "X");
-	//dump_stack(); /* debug */
-#endif
-
 	if (!guest_cpuid_has_xsave(vcpu) && (sregs->cr4 & X86_CR4_OSXSAVE)) {
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
 		VCPUPRINTK("(vcpu) %s:%d: ERROR !guest_cpuid_has_xsave(vcpu) %c\n",
 				__FILE__, __LINE__, !guest_cpuid_has_xsave(vcpu)? 'O' : 'X');
 		WARN_ON(-1);
 #endif
-	//	return -EINVAL;
+		//return -EINVAL;
 	}
 
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
@@ -8032,11 +7626,6 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 				"kvm_read_cr3(vcpu) 0x%lx sregs->cr3 0x%llx\n",
 				__func__, vcpu->vcpu_id, mmu_reset_needed,
 				kvm_read_cr3(vcpu), sregs->cr3);
-
-	if (!my_nid) {
-		PHMIGRATEPRINTK("(vcpu) %s(): <%d> TODO THIS IS A testing cr3 read %lx = vcpu %lx = sregs %llx\n",
-					__func__, vcpu->vcpu_id, kvm_read_cr3(vcpu), vcpu->arch.cr3, sregs->cr3);
-	}
 #endif
 	vcpu->arch.cr2 = sregs->cr2;
 	mmu_reset_needed |= kvm_read_cr3(vcpu) != sregs->cr3;
@@ -8046,11 +7635,6 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 	kvm_set_cr8(vcpu, sregs->cr8);
 
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	if (!my_nid) {
-		PHMIGRATEPRINTK("(vcpu) %s(): <%d> cr3 written read %lx = vcpu %lx = sregs %llx\n",
-					__func__, vcpu->vcpu_id, kvm_read_cr3(vcpu), vcpu->arch.cr3, sregs->cr3);
-	}
-
 	PHMIGRATEPRINTK("(vcpu) %s(): <%d> check-2 mmu_reset_needed %d "
 				"vcpu->arch.efer 0x%llx sregs->efer 0x%llx\n",
 				__func__, vcpu->vcpu_id, mmu_reset_needed,
@@ -8086,21 +7670,6 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 	vcpu->arch.cr0 = sregs->cr0;
 
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	// TODO BUG BUG BUG start
-	if (!my_nid) {
-		PHMIGRATEPRINTK("(vcpu) %s(): <%d> TODO THIS IS A HACK1 testing cr4 read %lx = vcpu %lx = sregs %llx\n",
-						__func__, vcpu->vcpu_id, kvm_read_cr4(vcpu), vcpu->arch.cr4, sregs->cr4);
-#if 0
-		vcpu->arch.cr4 = sregs->cr4;
-		PHMIGRATEPRINTK("(vcpu) %s(): <%d> TODO THIS IS A HACK2 testing cr4 %lx = %lx = %lx\n",
-							__func__, vcpu->vcpu_id, kvm_read_cr4(vcpu), vcpu->arch.cr4, sregs->cr4);
-		kvm_x86_ops->set_cr4(vcpu, sregs->cr4);
-		PHMIGRATEPRINTK("(vcpu) %s(): <%d> TODO THIS IS A HACK3 testing cr4 %lx = %lx = %lx\n",
-							__func__, vcpu->vcpu_id, kvm_read_cr4(vcpu), vcpu->arch.cr4, sregs->cr4);
-#endif
-	}
-	// TODO BUG BUG BUG end
-
 	PHMIGRATEPRINTK("(vcpu) %s(): <%d> check-4 mmu_reset_needed %d "
 				"vm_read_cr4(vcpu) 0x%lx sregs->cr4 0x%llx\n",
 				__func__, vcpu->vcpu_id, mmu_reset_needed,
@@ -8128,6 +7697,7 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 #endif
 	if (mmu_reset_needed)
 		kvm_mmu_reset_context(vcpu);
+
 #if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
 	VCPUPRINTK("(vcpu) %s(): <%d> kvm_mmu_reset_context \"%s\"\n",
 		__func__, vcpu->vcpu_id, mmu_reset_needed ? "PASS" : "SKIP");
@@ -8145,7 +7715,7 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 	PHMIGRATEPRINTK("(vcpu) %s(): <%d> pending_vec %d <? max_bits %d\n",
 				__func__, vcpu->vcpu_id, pending_vec, max_bits);
 	VCPUPRINTK("(vcpu) %s(): <%d> setup segment\n",
-							__func__, vcpu->vcpu_id);
+						__func__, vcpu->vcpu_id);
 #endif
 	kvm_set_segment(vcpu, &sregs->cs, VCPU_SREG_CS);
 	kvm_set_segment(vcpu, &sregs->ds, VCPU_SREG_DS);
@@ -8156,165 +7726,9 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 
 	kvm_set_segment(vcpu, &sregs->tr, VCPU_SREG_TR);
 	kvm_set_segment(vcpu, &sregs->ldt, VCPU_SREG_LDTR);
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG // 144 ds es gs
-	PHMIGRATEPRINTK("[seg] set base 64 cs 0x%llx ds 0x%llx es 0x%llx "
-					"fs 0x%llx gs 0x%llx ss 0x%llx     "
-					"tr 0x%llx ldt 0x%llx (done)\n",
-					sregs->cs.base, sregs->ds.base, sregs->es.base,
-					sregs->fs.base, sregs->gs.base, sregs->ss.base,
-					sregs->tr.base, sregs->ldt.base);
-	PHMIGRATEPRINTK("[seg] set limit 32 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.limit,
-					sregs->ds.limit,
-					sregs->es.limit,
-					sregs->fs.limit,
-					sregs->gs.limit,
-					sregs->ss.limit,
-					sregs->tr.limit,
-					sregs->ldt.limit);
-	PHMIGRATEPRINTK("[seg] set selector 16 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.selector,
-					sregs->ds.selector,
-					sregs->es.selector,
-					sregs->fs.selector,
-					sregs->gs.selector,
-					sregs->ss.selector,
-					sregs->tr.selector,
-					sregs->ldt.selector);
-	PHMIGRATEPRINTK("[seg] set type 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.type,
-					sregs->ds.type,
-					sregs->es.type,
-					sregs->fs.type,
-					sregs->gs.type,
-					sregs->ss.type,
-					sregs->tr.type,
-					sregs->ldt.type);
-	PHMIGRATEPRINTK("[seg] set unusable 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.unusable,
-					sregs->ds.unusable,
-					sregs->es.unusable,
-					sregs->fs.unusable,
-					sregs->gs.unusable,
-					sregs->ss.unusable,
-					sregs->tr.unusable,
-					sregs->ldt.unusable);
-	PHMIGRATEPRINTK("[seg] set padding 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.padding,
-					sregs->ds.padding,
-					sregs->es.padding,
-					sregs->fs.padding,
-					sregs->gs.padding,
-					sregs->ss.padding,
-					sregs->tr.padding,
-					sregs->ldt.padding);
-	PHMIGRATEPRINTK("[seg] set present 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.present,
-					sregs->ds.present,
-					sregs->es.present,
-					sregs->fs.present,
-					sregs->gs.present,
-					sregs->ss.present,
-					sregs->tr.present,
-					sregs->ldt.present);
-	PHMIGRATEPRINTK("[seg] set dpl 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.dpl,
-					sregs->ds.dpl,
-					sregs->es.dpl,
-					sregs->fs.dpl,
-					sregs->gs.dpl,
-					sregs->ss.dpl,
-					sregs->tr.dpl,
-					sregs->ldt.dpl);
-	PHMIGRATEPRINTK("[seg] set db 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.db,
-					sregs->ds.db,
-					sregs->es.db,
-					sregs->fs.db,
-					sregs->gs.db,
-					sregs->ss.db,
-					sregs->tr.db,
-					sregs->ldt.db);
-	PHMIGRATEPRINTK("[seg] set s 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.s,
-					sregs->ds.s,
-					sregs->es.s,
-					sregs->fs.s,
-					sregs->gs.s,
-					sregs->ss.s,
-					sregs->tr.s,
-					sregs->ldt.s);
-	PHMIGRATEPRINTK("[seg] set l 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.l,
-					sregs->ds.l,
-					sregs->es.l,
-					sregs->fs.l,
-					sregs->gs.l,
-					sregs->ss.l,
-					sregs->tr.l,
-					sregs->ldt.l);
-	PHMIGRATEPRINTK("[seg] set g 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.g,
-					sregs->ds.g,
-					sregs->es.g,
-					sregs->fs.g,
-					sregs->gs.g,
-					sregs->ss.g,
-					sregs->tr.g,
-					sregs->ldt.g);
-	PHMIGRATEPRINTK("[seg] set avl 8 cs 0x%x ds 0x%x es 0x%x "
-					"fs 0x%x gs 0x%x ss 0x%x     "
-					"tr 0x%x ldt 0x%x (done)\n",
-					sregs->cs.avl,
-					sregs->ds.avl,
-					sregs->es.avl,
-					sregs->fs.avl,
-					sregs->gs.avl,
-					sregs->ss.avl,
-					sregs->tr.avl,
-					sregs->ldt.avl);
-	// TODO
-#if 0
-struct kvm_segment {
-    __u64 base;
-    __u32 limit;
-    __u16 selector;
-    __u8  type;
-    __u8  present, dpl, db, s, l, g, avl;
-    __u8  unusable;
-    __u8  padding;
-};
-#endif
-#endif
 
 	update_cr8_intercept(vcpu);
 
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	VCPUPRINTK("(vcpu) %s(): setup init state for vcpu %d\n",
-									__func__, vcpu->vcpu_id);
-#endif
 	/* Older userspace won't unhalt the vcpu on reset. */
 	if (kvm_vcpu_is_bsp(vcpu) && kvm_rip_read(vcpu) == 0xfff0 &&
 		sregs->cs.selector == 0xf000 && sregs->cs.base == 0xffff0000 &&
@@ -8326,17 +7740,8 @@ struct kvm_segment {
 #endif
 		vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
 	}
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	PHMIGRATEPRINTK("(vcpu) %s(): <%d> get vcpu->arch.mp_state %d\n",
-						__func__, vcpu->vcpu_id, vcpu->arch.mp_state);
-#endif
 
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
-#if defined(CONFIG_POPCORN_HYPE) && POPHYPE_MIGRATE_DEBUG
-	PHMIGRATEPRINTK("(vcpu) %s(): <%d> ALL DONE\n",
-						__func__, vcpu->vcpu_id);
-	PHMIGRATEPRINTK("---------- %s(): SET end ----------\n\n", __func__);
-#endif
 
 	return 0;
 }
@@ -8790,7 +8195,7 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
 	BUG_ON(vcpu->kvm == NULL);
 	kvm = vcpu->kvm;
 
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
+#if defined(CONFIG_POPCORN_HYPE)
 	VCPUPRINTK("(vcpu) [%d] %s: vcpu_id %d\n",
 				current->pid, __func__, vcpu->vcpu_id);
 	VCPUPRINTK("(vcpu) [%d] %s: !irqchip_in_kernel(kvm) ***%s*** || "
@@ -8984,7 +8389,7 @@ int __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa, u32 size)
 		 * MAP_SHARED to prevent internal slot pages from being moved
 		 * by fork()/COW.
 		 */
-#ifndef CONFIG_POPCORN /* TODO: shouldn't be POPHYPE not POPCORN? */
+#ifndef CONFIG_POPCORN
 		hva = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
 			      MAP_SHARED | MAP_ANONYMOUS, 0);
 #else
@@ -8993,11 +8398,10 @@ int __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa, u32 size)
 		/* serialize in userspace */
 		hva = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
 							  MAP_SHARED | MAP_ANONYMOUS, 0);
-		KVMCLOCKPK("%s(): -> vm_mmap(NULL) id %d gpa 0x%llx size %u => hva %lx\n",
-											__func__, id, gpa, size, hva);
+		KVMCLOCKPK("%s(): -> vm_mmap(NULL) "
+					"id %d gpa 0x%llx size %u => hva %lx\n",
+								__func__, id, gpa, size, hva);
 #else
-		//hva = vma_server_mmap_remote(NULL, 0, size, PROT_READ | PROT_WRITE,
-		//									MAP_SHARED | MAP_ANONYMOUS, 0);
 		BUG();
 		hva = pophype_vm_mmap_anon(size, PROT_READ | PROT_WRITE,
 										  MAP_SHARED | MAP_ANONYMOUS);
@@ -9370,9 +8774,6 @@ void kvm_arch_async_page_ready(struct kvm_vcpu *vcpu, struct kvm_async_pf *work)
 		return;
 
 	vcpu->arch.mmu.page_fault(vcpu, work->gva, 0, true);
-#ifdef CONFIG_POPCORN_HYPE
-						//-2, -2); // dbg
-#endif
 }
 
 static inline u32 kvm_async_pf_hash_fn(gfn_t gfn)
@@ -9601,29 +9002,18 @@ int kvm_arch_update_irqfd_routing(struct kvm *kvm, unsigned int host_irq,
 
 	return kvm_x86_ops->update_pi_irte(kvm, host_irq, guest_irq, set);
 }
-#ifdef CONFIG_POPCORN_HYPE /* pophype migrate */
+
+#ifdef CONFIG_POPCORN_HYPE
 /* define in ./include/linux/kvm_host.h */
 void pophype_dump_vmcs()
 {
 #if POPHYPE_MIGRATE_DEBUG
-	/* arch/x86/kvm/vmx.c */
-	PHMIGRATEPRINTK("\n------ %s(): ----- arch/x86/kvm/vmx.c "
-					"START START START -----\n", __func__);
 	kvm_x86_ops->dump_vmcs();
-	/* pophype save vmcs */
-	PHMIGRATEPRINTK("\n------ %s(): ----- arch/x86/kvm/vmx.c "
-					"END END END -----\n\n\n\n\n", __func__);
 #endif
 }
 
-/* TODO per vcpu so that no problem, 1 migration 1 data set*/
-//#define MAX_MSR_ENTRIES 25
-//struct pophype_msrs_t {
-//	struct kvm_msrs info;
-//	struct kvm_msr_entry entries[MAX_MSR_ENTRIES];
-//}; //msr_data;
 #include "../../../kernel/popcorn/types.h"
-//struct kvm_msr_entry *pophype_msrs = msr_data.entries;
+/* Per vcpu so that no problem, 1 migration 1 data set*/
 /* pophype migrate state cache */
 static struct kvm_mp_state pophype_mp_state[MAX_POPCORN_VCPU];
 static struct kvm_regs pophype_regs[MAX_POPCORN_VCPU];
@@ -9633,55 +9023,14 @@ static struct kvm_xcrs pophype_xcrs[MAX_POPCORN_VCPU];
 static struct kvm_lapic_state pophype_lapic[MAX_POPCORN_VCPU];
 static struct kvm_xsave pophype_xsave[MAX_POPCORN_VCPU];
 static struct kvm_vcpu_events pophype_vcpu_events[MAX_POPCORN_VCPU];
-//static struct kvm_data pophype_msrs; // ./arch/x86/include/uapi/asm/kvm.h
-//static struct pophype_msrs_t pophype_msrs; // ./arch/x86/include/uapi/asm/kvm.h
 static struct pophype_kvm_msrs pophype_msrs[MAX_POPCORN_VCPU]; // ./arch/x86/include/uapi/asm/kvm.h
-//void pophype_update_vmcs(struct pophype_migrate_update_info *info, int overwrite)
-//{
-//	/* arch/x86/kvm/vmx.c */
-//	kvm_x86_ops->update_vmcs(info, overwrite);
-//}
 #ifdef CONFIG_POPCORN_CHECK_SANITY
-bool is_saved_vcpu = false; // TODO This is not perfect
+bool is_saved_vcpu = false;
 #endif
 void pophype_save_vcpu_states(struct kvm_vcpu *vcpu)
 {
 	int r = 0, n = 0;
-#if 0
-	PHMIGRATEPRINTK("\n================ %s(): ===================\n", __func__);
-	PHMIGRATEPRINTK("%s(): pophypemigrate saves vcpu states START\n", __func__);
-	PHMIGRATEPRINTK("================== %s(): ===================\n", __func__);
-
-	/* Let's assume ckpt/vcpu migration  change */
-	PHMIGRATEPRINTK("%s(): [ck] <%d> BUG_ON if vcpu_running %d "
-					"vcpu->arch.mp_state %d (0) vcpu->arch.apf.halted %d (1)\n",
-					__func__, vcpu->vcpu_id, kvm_vcpu_running(vcpu),
-					vcpu->arch.mp_state, vcpu->arch.apf.halted);
-	if (kvm_vcpu_running(vcpu)) {
-		printk(KERN_ERR "BUG: %s(): <%d> BUG_ON if vcpu_running %d = 1 || "
-					"expect vcpu->arch.mp_state %d (0) "
-					"vcpu->arch.apf.halted %d (1) BUT NOT!!!\n",
-					__func__, vcpu->vcpu_id, kvm_vcpu_running(vcpu),
-					vcpu->arch.mp_state, vcpu->arch.apf.halted);
-		printk(KERN_ERR "TODO: fix it here - chage the states\n");
-		//BUG();
-	}
-	// solution: change it here?
-	// It's better to check this again after
-#endif
 	/* define the list of required MSRs */
-//	PHMIGRATEPRINTK("TODO: check msrs_to_save %s\n", __FILE__);
-/*
-	static u32 msrs_to_save[] = {
-	MSR_IA32_SYSENTER_CS, MSR_IA32_SYSENTER_ESP, MSR_IA32_SYSENTER_EIP,
-	MSR_STAR,
-#ifdef CONFIG_X86_64
-	MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_SYSCALL_MASK, MSR_LSTAR,
-#endif
-	MSR_IA32_TSC, MSR_IA32_CR_PAT, MSR_VM_HSAVE_PA,
-	MSR_IA32_FEATURE_CONTROL, MSR_IA32_BNDCFGS, MSR_TSC_AUX,
-};
-*/
 	pophype_msrs[vcpu->vcpu_id].entries[n++].index = MSR_IA32_APICBASE; // no
 	pophype_msrs[vcpu->vcpu_id].entries[n++].index = MSR_IA32_SYSENTER_CS;
 	pophype_msrs[vcpu->vcpu_id].entries[n++].index = MSR_IA32_SYSENTER_ESP;
@@ -9699,41 +9048,17 @@ void pophype_save_vcpu_states(struct kvm_vcpu *vcpu)
 	//pophype_msrs[vcpu->vcpu_id][n++].index = MSR_IA32_FEATURE_CONTROL;
 	pophype_msrs[vcpu->vcpu_id].nmsrs = n;
 
-
 	kvm_arch_vcpu_ioctl_get_mpstate(vcpu, &pophype_mp_state[vcpu->vcpu_id]); // ./virt/kvm/kvm_main.c
 	kvm_arch_vcpu_ioctl_get_sregs(vcpu, &pophype_sregs[vcpu->vcpu_id]); // ./virt/kvm/kvm_main.c
 	kvm_arch_vcpu_ioctl_get_regs(vcpu, &pophype_regs[vcpu->vcpu_id]); // ./virt/kvm/kvm_main.c
-//	PHMIGRATEPRINTK("%s(): ckpt1\n", __func__);
-	//r = msr_io(vcpu, &pophype_msrs, do_get_msr, 1); // KVM_GET_MSRS // TODO argp
-	pophype_msr_io(vcpu, &pophype_msrs[vcpu->vcpu_id], do_get_msr, 1); // KVM_GET_MSRS // TODO argp
+	pophype_msr_io(vcpu, &pophype_msrs[vcpu->vcpu_id], do_get_msr, 1); // KVM_GET_MSRS
 	kvm_vcpu_ioctl_x86_get_xcrs(vcpu, &pophype_xcrs[vcpu->vcpu_id]); // KVM_GET_XCRS (usr)
 	r = kvm_vcpu_ioctl_get_lapic(vcpu, &pophype_lapic[vcpu->vcpu_id]); // KVM_GET_LAPIC
 	WARN_ON(r);
 	kvm_arch_vcpu_ioctl_get_fpu(vcpu, &pophype_fpu[vcpu->vcpu_id]); // ./virt/kvm/kvm_main.c
 	kvm_vcpu_ioctl_x86_get_xsave(vcpu, &pophype_xsave[vcpu->vcpu_id]); // KVM_GET_XSAVE (usr)
 	kvm_vcpu_ioctl_x86_get_vcpu_events(vcpu, &pophype_vcpu_events[vcpu->vcpu_id]); //KVM_GET_VCPU_EVENTS
-	//kvm_arch_vcpu_ioctl_get_mpstate(vcpu, &pophype_mp_state[vcpu->vcpu_id]); // ./virt/kvm/kvm_main.c // qemu ./target/i386/kvm.c (order)
 
-	//int r = 0;
-	//r += msr_io(vcpu, argp, do_set_msr, 0); // KVM_SET_MSRS
-	//r += kvm_vcpu_ioctl_x86_set_xcrs(vcpu, xcrs); // KVM_SET_XCRS
-	//r += kvm_vcpu_ioctl_set_lapic(vcpu, u.lapic); // KVM_SET_LAPIC
-	//r += kvm_vcpu_ioctl_x86_set_xsave(vcpu, u.xsave); // KVM_SET_XSAVE
-	//r += kvm_vcpu_ioctl_x86_set_vcpu_events(vcpu, &events); KVM_SET_VCPU_EVENTS
-	//WARN_ON(r);
-#if 0
-	PHMIGRATEPRINTK("%s(): [rip %llx]\n", __func__,
-					pophype_regs[vcpu->vcpu_id].rip);
-	PHMIGRATEPRINTK("%s(): [cr0 %llx]\n", __func__,
-					pophype_sregs[vcpu->vcpu_id].cr0);
-	PHMIGRATEPRINTK("%s(): [msrs.nmsrs %d]\n", __func__,
-						pophype_msrs[vcpu->vcpu_id].nmsrs);
-	PHMIGRATEPRINTK("%s(): [mp_state %u]\n", __func__,
-				pophype_mp_state[vcpu->vcpu_id].mp_state);
-	PHMIGRATEPRINTK("================ %s(): ===================\n", __func__);
-	PHMIGRATEPRINTK("%s(): pophypemigrate saves vcpu states END\n", __func__);
-	PHMIGRATEPRINTK("================== %s(): ===================\n\n", __func__);
-#endif
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 	is_saved_vcpu = true;
 #endif
@@ -9754,9 +9079,6 @@ struct pophype_kvm_msrs* pophype_get_msrs(int vcpu_id) { return &pophype_msrs[vc
 void pophype_vcpu_check_vmcs(struct kvm_vcpu *vcpu) {
 	kvm_x86_ops->pophype_check_vmcs(vcpu);
 }
-//int pophype_msr_io(struct kvm_vcpu *vcpu, argp, do_set_msr, 0) {
-//	return msr_io(vcpu, argp, do_set_msr, 0)
-//}
 int pophype_vcpu_ioctl_x86_set_xcrs(struct kvm_vcpu *vcpu, struct kvm_xcrs *xcrs) {
 	return kvm_vcpu_ioctl_x86_set_xcrs(vcpu, xcrs);
 }
@@ -9775,17 +9097,15 @@ int pophype_do_set_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data) {
 
 /* See msr_io */
 int pophype_msr_io(struct kvm_vcpu *vcpu, struct pophype_kvm_msrs *msrs,
-//int pophype_msr_io(struct kvm_vcpu *vcpu, struct pophype_msrs_t *msrs,
-//int pophype_msr_io(struct kvm_vcpu *vcpu, struct kvm_msrs *msrs,
-//		    struct kvm_msr_entry *entries,
 			int (*pophype_do_get_set_msr)(struct kvm_vcpu *vcpu, unsigned index, u64 *data),
 			int writeback) {
 	struct kvm_msr_entry *entries;
 	unsigned size;
 	int r;
-	PHMIGRATEPRINTK("<%d> %s(): \"%s\" BUGON(msrs->nmsrs %d >= MAX_IO_MSRS %d);\n",
-			vcpu->vcpu_id, __func__,
-			writeback ? "READ" : "WRITE", msrs->nmsrs, MAX_IO_MSRS);
+	PHMIGRATEPRINTK("<%d> %s(): \"%s\" "
+					"BUGON(msrs->nmsrs %d >= MAX_IO_MSRS %d);\n",
+					vcpu->vcpu_id, __func__,
+					writeback ? "READ" : "WRITE", msrs->nmsrs, MAX_IO_MSRS);
 
 	BUG_ON(msrs->nmsrs >= MAX_IO_MSRS);
 	size = sizeof(struct kvm_msr_entry) * msrs->nmsrs;
@@ -9795,15 +9115,11 @@ int pophype_msr_io(struct kvm_vcpu *vcpu, struct pophype_kvm_msrs *msrs,
 	BUG_ON (!entries);
 	memcpy(entries, msrs->entries, size);
 
-	//r = __msr_io(vcpu, msrs, msrs->entries, do_set_msr); // TODO try this w/o alloc
-	//r = __msr_io(vcpu, (struct kvm_msrs*)msrs, entries, do_set_msr);
 	/* pophype_do_get_set_msr is caller specified. Rename it. */
 	r = __msr_io(vcpu, (struct kvm_msrs*)msrs, entries, pophype_do_get_set_msr);
-	// either 	1. static int do_get_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data)
-	// or 		2. static int do_set_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data)
 	BUG_ON(r < 0);
 
-	if (writeback) { // 1:READ 0: WRITE
+	if (writeback) { /* 1:READ 0: WRITE */
 		memcpy(msrs->entries, entries, size);
 	}
 
@@ -9817,11 +9133,7 @@ int pophype_read_sysenter_states(struct kvm_vcpu *vcpu)
 			kvm_x86_ops->pophype_vmcs_readl(GUEST_SYSENTER_ESP),
 			(u32)kvm_x86_ops->pophype_vmcs_readl(GUEST_SYSENTER_CS),
 			kvm_x86_ops->pophype_vmcs_readl(GUEST_SYSENTER_EIP));
-	//vmcs_readl(GUEST_SYSENTER_ESP), vmcs_read32(GUEST_SYSENTER_CS), vmcs_readl(GUEST_SYSENTER_EIP);
 
-//	kvm_x86_ops->pophype_vmcs_writel(GUEST_SYSENTER_ESP, val);
-//	kvm_x86_ops->pophype_vmcs_writel(GUEST_SYSENTER_CS, val);
-//	kvm_x86_ops->pophype_vmcs_writel(GUEST_SYSENTER_EIP, val);
 	return 0;
 }
 #endif
