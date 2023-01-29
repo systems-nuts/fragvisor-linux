@@ -176,12 +176,6 @@ static void recalculate_apic_map(struct kvm *kvm)
 	struct kvm_vcpu *vcpu;
 	int i;
 
-#ifdef CONFIG_POPCORN_HYPE
-	//if (distributed_process(current)) {
-		PHAPICPRINTK("%s(): $$$$[%d/%d] set up apic_map(phys & logic maps) POPHYPE\n",
-												__func__, my_nid, current->pid);
-	//}
-#endif
 	new = kzalloc(sizeof(struct kvm_apic_map), GFP_KERNEL);
 
 	mutex_lock(&kvm->arch.apic_map_lock);
@@ -202,14 +196,6 @@ static void recalculate_apic_map(struct kvm *kvm)
 		ldr = kvm_apic_get_reg(apic, APIC_LDR);
 
 		if (aid < ARRAY_SIZE(new->phys_map)) {
-#ifdef CONFIG_POPCORN_HYPE
-			//if (distributed_process(current)) {
-				PHAPICPRINTK("\t\t%s(): $$$$$[%d/%d] <%d> phys_map[%d(<%lu)] %p\n",
-						__func__, my_nid, current->pid,
-						apic->vcpu->vcpu_id, aid,
-						ARRAY_SIZE(new->phys_map), apic);
-			//}
-#endif
 			new->phys_map[aid] = apic;
 		}
 
@@ -229,19 +215,6 @@ static void recalculate_apic_map(struct kvm *kvm)
 		apic_logical_id(new, ldr, &cid, &lid);
 
 		if (lid && cid < ARRAY_SIZE(new->logical_map)) {
-#ifdef CONFIG_POPCORN_HYPE
-				PHAPICPRINTK("\t\t%s(): $$$$$[%d/%d] <%d> "
-						"logical_map[%d (<%lu)][%d] %p (%s)\n",
-						__func__, my_nid, current->pid,
-						apic->vcpu->vcpu_id,
-						cid, ARRAY_SIZE(new->logical_map), ffs(lid) - 1, apic,
-						distributed_process(current) ?
-							"POPCORN LOCAL" : "POPCORN REMOTE/VANILLA");
-			//if (distributed_process(current)) {
-			//	PHAPICPRINTK("\t\t\t%s(): me broadcast to others cid %d vcpu %d "
-			//					"(LOGICAL_MAP)\n", __func__, cid, ffs(lid) - 1);
-			//}
-#endif
 			new->logical_map[cid][ffs(lid) - 1] = apic;
 		}
 	}
@@ -621,14 +594,8 @@ static void apic_update_ppr(struct kvm_lapic *apic)
 	else
 		ppr = isrv & 0xf0;
 
-#ifdef CONFIG_POPCORN_HYPE
-// pophype
-//	apic_debug("vlapic %p, ppr 0x%x, isr 0x%x, isrv 0x%x",
-//		   apic, ppr, isr, isrv);
-#else
 	apic_debug("vlapic %p, ppr 0x%x, isr 0x%x, isrv 0x%x",
 		   apic, ppr, isr, isrv);
-#endif
 
 	if (old_ppr != ppr) {
 		apic_set_reg(apic, APIC_PROCPRI, ppr);
@@ -713,15 +680,9 @@ bool kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
 	struct kvm_lapic *target = vcpu->arch.apic;
 	u32 mda = kvm_apic_mda(dest, source, target);
 
-#ifdef CONFIG_POPCORN_HYPE
-//	apic_debug("target %p, source %p, dest 0x%x, "
-//		   "dest_mode 0x%x, short_hand 0x%x\n",
-//		   target, source, dest, dest_mode, short_hand);
-#else
 	apic_debug("target %p, source %p, dest 0x%x, "
 		   "dest_mode 0x%x, short_hand 0x%x\n",
 		   target, source, dest, dest_mode, short_hand);
-#endif
 	ASSERT(target);
 	switch (short_hand) {
 	case APIC_DEST_NOSHORT:
@@ -759,8 +720,9 @@ void pophype_mq_rx_stat(struct seq_file *seq, void *v)
     }
 }
 #endif
+
 #ifdef CONFIG_POPCORN_HYPE
-/*
+/**
  * kvm_lapic: inject a vcpu interrupt and kick out the vcpu from guest mode.
  * r = succ_cnt
  */
@@ -801,85 +763,40 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 	}
 
 #if HYPE_PERF_CRITICAL_DEBUG && defined(CONFIG_POPCORN_HYPE)
-	//if (distributed_process(current)) {
-		/* handle_ept_misconfig may come with !src. Too many */
-		/* will return from fast. only one exception */
-		cnt++;
-		if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-			IPIPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%u><irq->dest_id> "
-				"dest_mode 0x%x %s - 5 0x%lx #%d\n",
-				__func__, my_nid, current->pid, src ? src->vcpu->vcpu_id : -1,
-				irq->dest_id, irq->dest_mode,
-					irq->dest_mode == APIC_DEST_PHYSICAL ? "PHYSICAL map TRUST" :
-						irq->dest_mode == APIC_DEST_LOGICAL ? "LOGICAL map DON'T TRUST" : "",
-				(long int)irq->dest_mode, cnt);
-		}
-	//}
+	cnt++;
+	if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT) {
+		IPIPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%u><irq->dest_id> "
+			"dest_mode 0x%x %s - 5 0x%lx #%d\n",
+			__func__, my_nid, current->pid, src ? src->vcpu->vcpu_id : -1,
+			irq->dest_id, irq->dest_mode,
+				irq->dest_mode == APIC_DEST_PHYSICAL ? "PHYSICAL map TRUST" :
+					irq->dest_mode == APIC_DEST_LOGICAL ? "LOGICAL map DON'T TRUST" : "",
+			(long int)irq->dest_mode, cnt);
+	}
 #endif
 
 	/* phy/local map */
 	if (irq->dest_mode == APIC_DEST_PHYSICAL) {
 		if (irq->dest_id >= ARRAY_SIZE(map->phys_map)) {
-#ifdef CONFIG_POPCORN_HYPE
-		//if (distributed_process(current)) {
-			IPIVPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%u> - 6 "
-						"MAYBE BAD OUT ***NOT HAPPEN***\n",
-						__func__, my_nid, current->pid,
-						src ? src->vcpu->vcpu_id : -1, irq->dest_id);
-		//}
-#endif
 			goto out;
 		}
 
 		dst = &map->phys_map[irq->dest_id];
-#ifdef CONFIG_POPCORN_HYPE
-		/* not broadcase or not low priority */
-		//PHAPICPRINTK("%s(): take dst %p = map->phys_map[%u] (%s)\n",
-		//						__func__, dst, irq->dest_id,
-		//	distributed_process(current) ? "POPCORN" : "VANILLA");
-#endif
 	} else {
 		u16 cid;
 
 		if (!kvm_apic_logical_map_valid(map)) {
 			ret = false;
-#ifdef CONFIG_POPCORN_HYPE
-			//if (distributed_process(current)) {
-				IPIVPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%d> - 7 "
-							"GOOD (important) ***NOT HAPPEN***\n",
-							__func__, my_nid, current->pid,
-							src ? src->vcpu->vcpu_id : -1, irq->dest_id);
-			//}
-#endif
 			goto out;
 		}
 
 		apic_logical_id(map, irq->dest_id, &cid, (u16 *)&bitmap);
 
 		if (cid >= ARRAY_SIZE(map->logical_map)) {
-#ifdef CONFIG_POPCORN_HYPE
-			//if (distributed_process(current)) {
-				IPIVPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%d> - 7-2 "
-							"GOOD OUT ***NOT HAPPEN***\n",
-							__func__, my_nid, current->pid,
-							src ? src->vcpu->vcpu_id : -1, irq->dest_id);
-			//}
-#endif
 			goto out;
 		}
 
 		dst = map->logical_map[cid];
-
-		//PHAPICPRINTK("%s(): take dst %p = map->logical_map[%u] (%s)\n",
-		//								__func__, dst, irq->dest_id,
-		//		distributed_process(current) ? "POPCORN" : "VANILLA");
-#ifdef CONFIG_POPCORN_HYPE
-	//if (distributed_process(current)) {
-		IPIVPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%d> - double check %d\n",
-					__func__, my_nid, current->pid,
-					src ? src->vcpu->vcpu_id : -1, irq->dest_id, (int)cid);
-	//}
-#endif
 
 		if (kvm_lowest_prio_delivery(irq)) {
 			int l = -1;
@@ -897,26 +814,12 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 	}
 
 #ifdef CONFIG_POPCORN_HYPE
-#if HYPE_PERF_CRITICAL_DEBUG
-	//if (distributed_process(current)) {
-		IPIVPRINTK("\t%s(): [%d/%d] <%d> -ipi> <%d> - 8 bitmap 0x%lx dst %p *dst %p\n",
-				__func__, my_nid, current->pid,
-				src ? src->vcpu->vcpu_id : -1, irq->dest_id, bitmap, dst, *dst);
-	//}
-#endif
-#endif
-
-#ifdef CONFIG_POPCORN_HYPE
     /* if it is virtio-ring irq then send to the
      * vcpu running on this node
      */
 	if (distributed_process(current)) {
 		if ((irq->gsi > 24) && (irq->gsi ) < 38) {
 			*r += kvm_apic_set_irq(kvm->vcpus[my_nid], irq, dest_map);
-#ifdef POPCORN_IRQ_DEBUG
-			if (irq->gsi < 29)
-				VIRTIOBLKPK("%s(): injected irq! gsi=%u\n", __func__, irq->gsi);
-#endif
 			goto out;
 		}
 	}
@@ -932,9 +835,6 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 #endif
 
 		if (!dst[i]) {
-#ifdef CONFIG_POPCORN_HYPE
-			/* TODO check good/vanilla cases*/
-#endif
 			continue;
 		}
 		if (*r < 0)
@@ -948,8 +848,6 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 					!src ? "<hw>" : "",
 					dst[i]->vcpu->vcpu_id,
 					dest_map, irq->delivery_mode, irq->dest_id);
-		/* !src->vcpu->vcpu_id means not IPI?
-			from HW (100% from msi)? Here is the injection place */
 
 		/* sipi/ipi redirection
 		 * BSP wakes up each AP via a INIT-SIPI-SIPI (ISS) sequence:
@@ -957,7 +855,6 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 		 */
 		if (distributed_process(current)
 			&& my_nid != popcorn_vcpuid_to_nid(dst[i]->vcpu->vcpu_id)
-			//&& my_nid >= 0 /* for vanilla */
 			/* for deferenciating from remote/local to prevent from
 				nesting redirection. pophype will inject a irq from remote/
 				Not from remote, from local. */
@@ -981,15 +878,6 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 					rx_total[i]++;
 			}
 #endif
-			/* Since many printk on vcpu1 */
-			//if (!src && irq->delivery_mode == APIC_DM_LOWEST) { /* NET_MSI case */
-			//	if (dst[i]->vcpu->vcpu_id < 4) { /* BIG HACK - make it dynamic
-			//					(check guest kernel boot log), we may be good */
-			//		*r += popcorn_send_ipi(dst[i]->vcpu, irq, dest_map);
-			//	} /* Ignore vcpu_id >= 4 since they are not existing */
-			//} else { /* popcorn distributed case */
-			//	*r += popcorn_send_ipi(dst[i]->vcpu, irq, dest_map);
-			//}
 
 #else /* For NET_MSI 1 */
 			/* NET_MSI - before NIC working, msi_in&out both receive a irq in
@@ -998,15 +886,9 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 				I believe one of them injects the IRQ. This irq has no src.
 				It's not from other vCPU but IO */
 			/* It makes sense, !src -> not from vcpu but io (like msi) */
-			/* TODO: check if !src always comes with APIC_DM_LOWEST */
 			if (!src && irq->delivery_mode == APIC_DM_LOWEST) { /* NET_MSI case */
-				/* TODO - always redirect to HOST because
-					we restrict such things happen in the upper layer.
-					I (vcpu0) must be in the host now.
-					And thus use vcpu0's kvm_vcpu/kvm_lapic */
 				struct kvm_vcpu *vcpu0 = pophype_vcpu0;
 				cnt++;
-				//apic = vcpu->arch.apic;
 #if POPCORN_STAT_MQ_INFO
 				if (vcpu0->vcpu_id < MAX_MQ) {
 					rx_total[vcpu0->vcpu_id]++;
@@ -1015,18 +897,6 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 				BUG_ON(!pophype_vcpu0);
 #endif
-				CRITICALNETPK("\t%s(): [%d/%d <%d>] ***NET_MSI*** case src %p mode 0x%x "
-							"= redirect to local cpu (dest_mode 0x%x) redirect [%u] -> [%u] #%d\n",
-							__func__, my_nid, current->pid, smp_processor_id(), /* CAN I AWALY PIN MYSELVE IF MSI */
-							src, irq->delivery_mode, irq->dest_mode,
-							dst[i]->vcpu->vcpu_id, vcpu0->vcpu_id, cnt);
-
-				/* HACK im testing */
-				//*r += kvm_apic_set_irq(dst[my_nid]->vcpu, irq, dest_map);
-
-				/* vanilla */
-				//*r += kvm_apic_set_irq(dst[i]->vcpu, irq, dest_map); /* vanilla */
-
 				/* pophype vhost-net handle msi on only node0 */
 				*r += kvm_apic_set_irq(vcpu0, irq, dest_map); /* pophype vhost-net handle msi */
 
@@ -1042,8 +912,6 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 				*r += popcorn_send_ipi(dst[i]->vcpu, irq, dest_map);
 			}
 #endif
-			/* no matter local or forward - debug here */
-			//if (r == 0)
 #if HYPE_PERF_CRITICAL_DEBUG
 			int remtoe_node_src = src ? src->vcpu->vcpu_id : 0; /*name is bad */
 			if (irq->delivery_mode ||
@@ -1087,9 +955,8 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 #endif // end HYPE_PERF_CRITICAL_DEBUG
 
 #ifdef CONFIG_POPCORN_CHECK_SANITY /* Important debug info - since we don't hanle this now */
-			if (*r == old_r) { /* Didn't succ. e.g. remote found !dst[dst_vcpu_id] */
-				/* TODO - vanilla & pophype both happen */
-				/* leave it or retry? */
+			if (*r == old_r) {
+				/* Didn't succ. e.g. remote found !dst[dst_vcpu_id] */
 				PHMIGRATEPRINTK(KERN_ERR "\t Remote found !dst_cpu<%d> new %d old %d "
 						"my_nid %d target_nid %d (%s) gcpus[0-4]\n",
 						dst[i]->vcpu->vcpu_id, *r, old_r,
@@ -1097,16 +964,15 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 						my_nid == popcorn_vcpuid_to_nid(
 							dst[i]->vcpu->vcpu_id) ? "local" : "delegation");
 				popcorn_show_gcpu_table();
-				//dump_stack();
 				PHMIGRATEPRINTK(KERN_ERR "\t - [pophypemigrate] aka race condition "
 								"durring pophype migration. Handle it\n");
-				// local: my_nid == popcorn_vcpuid_to_nid(dst[i]->vcpu->vcpu_id)
-				// forward: my_nid != popcorn_vcpuid_to_nid(dst[i]->vcpu->vcpu_id)
 			}
 #endif
 		} else { /* !distributed_process */
-			if (dest_map == REMOTE_APIC) { /* local irq insertion req from a remote node */
-				dest_map = NULL; /* This is an assumption we don't handle any !!dest_map */
+			/* local irq insertion req from a remote node */
+			if (dest_map == REMOTE_APIC) {
+				/* This is an assumption we don't handle any !!dest_map */
+				dest_map = NULL;
 
 				IPIPRINTK("\t =kvmipi> <*%d*> %s(): [%d/%d] <%d>%s "
 							"irq->dst_id <%u> dest_mode 0x%x %s - 91 "
@@ -1131,26 +997,8 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 						__func__, current->pid,
 						src ? src->vcpu->vcpu_id : -1,
 						!src ? "<msi (aka hw?)>" : "", i, cnt2);
-#if HYPE_PERF_CRITICAL_IPI_DEBUG
-			if (cnt2 > 300) // debug
-				dump_stack(); // debug
-#endif
 			*r += kvm_apic_set_irq(dst[i]->vcpu, irq, dest_map);
 		}
-
-		//if (irq->delivery_mode
-#if HYPE_PERF_CRITICAL_IPI_DEBUG
-//		if (dst[i]->vcpu) { // for vanilla printk
-//			if (irq->delivery_mode)
-//				IPIVPRINTK("\t%s(): [%d/%d] <%d>%s =kvmipi> <%d> - 9 VANILLA"
-//					"dest_map %p mode 0x%x r %s #%d VANILLA\n",
-//					__func__, my_nid, current->pid,
-//					src ? src->vcpu->vcpu_id : -1,
-//					!src ? "<hw>" : "",
-//					dst[i]->vcpu->vcpu_id,
-//					dest_map, irq->delivery_mode, !r ? "bad":"good", cnt2);
-//		}
-#endif
 #else
 		*r += kvm_apic_set_irq(dst[i]->vcpu, irq, dest_map);
 #endif
@@ -1168,22 +1016,10 @@ bool popcorn_kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *sr
 	struct kvm_apic_map *map;
 	unsigned long bitmap = 1;
 	struct kvm_lapic **dst;
-	//int i;
 	bool ret;
 
-	/******************* POPHYPE HACK ************************/
-	/******************* POPHYPE HACK ************************/
-	/******************* POPHYPE HACK ************************/
-	//irq->dest_mode = APIC_DEST_LOGICAL;
-	// There are routes can trigger this but I don't know where.
-	// Check process_ipi_request() if (sipi)'s else !!!!!!!
-	/******************* POPHYPE HACK ************************/
-	/******************* POPHYPE HACK ************************/
-	/******************* POPHYPE HACK ************************/
-
-
 #ifdef CONFIG_POPCORN_CHECK_SANITY
-	/* From remote. It's impossible to be itself */
+	/* From remote. It's impossible to be itself. */
 	BUG_ON(irq->shorthand == APIC_DEST_SELF);
 #endif
 
@@ -1191,14 +1027,6 @@ bool popcorn_kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *sr
 		BUG(); /* Never happen */
 		return false;
 	}
-
-//  remove when supporting muti-vcpu
-//	bool x2apic_ipi;
-//	x2apic_ipi = src && apic_x2apic_mode(src);
-//	if (irq->dest_id == (x2apic_ipi ? X2APIC_BROADCAST : APIC_BROADCAST)) {
-//		BUG(); /* Never happen */
-//		return false;
-//	}
 
 	ret = true;
 	rcu_read_lock();
@@ -1212,8 +1040,7 @@ bool popcorn_kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *sr
 
 #if HYPE_PERF_CRITICAL_DEBUG
 #ifdef CONFIG_POPCORN_HYPE
-	//if (distributed_process(current)) {
-	if (irq->delivery_mode) { /* ipi's mode > 0 (x500/600) // too many mode=0 */
+	if (irq->delivery_mode) {
 		/* handle_ept_misconfig may come with !src */
 		/* will return from fast. only one exception */
 		IPIPRINTK("\t => %s(): [%d/%d] <%d> -ipi> <%d> (%s) - 5 dst_mode 0x%lx "
@@ -1231,24 +1058,9 @@ bool popcorn_kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *sr
 	/* phy/logic map */
 	if (irq->dest_mode == APIC_DEST_PHYSICAL) {
 		if (irq->dest_id >= ARRAY_SIZE(map->phys_map)) {
-#ifdef CONFIG_POPCORN_HYPE
-		//if (distributed_process(current)) {
-			IPIVPRINTK("\t => %s(): [%d/%d] <%d> -ipi> <%d> - 6 "
-						"MAYBE BAD OUT ***NOT HAPPEN***\n",
-						__func__, my_nid, current->pid,
-						src ? src->vcpu->vcpu_id : -1, dst_vcpu_id);
-		//}
-#endif
 			BUG();
 			goto out;
 		}
-
-#ifdef CONFIG_POPCORN_HYPE
-		/* not broadcast or not low priority */
-
-		/********** Popcorn recreated (synced across node) TODO CHECK!!! ************/
-#endif
-		/* TODO CHECK.... metadata not synced */
 		dst = &map->phys_map[irq->dest_id];
 	} else {
 		u16 cid;
@@ -1257,95 +1069,28 @@ bool popcorn_kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *sr
 			modes at the same time. (Physical map is always right.) */
 		if (!kvm_apic_logical_map_valid(map)) {
 			ret = false;
-#ifdef CONFIG_POPCORN_HYPE
-			//if (distributed_process(current)) {
-				IPIVPRINTK("\t => %s(): [%d/%d] <%d> -ipi> <%d> - 7 "
-							"GOOD (important) ***NOT HAPPEN***\n",
-							__func__, my_nid, current->pid,
-							src ? src->vcpu->vcpu_id : -1, dst_vcpu_id);
-			//}
-#endif
 			BUG();
 			goto out;
 		}
 
-		/* TODO CHECK.... metadata not synced */
 		apic_logical_id(map, irq->dest_id, &cid, (u16 *)&bitmap);
 
 		if (cid >= ARRAY_SIZE(map->logical_map)) {
-#ifdef CONFIG_POPCORN_HYPE
-			//if (distributed_process(current)) {
-				IPIVPRINTK("\t => %s(): [%d/%d] <%d> -ipi> <%d> - 7-2 "
-							"GOOD OUT ***NOT HAPPEN***\n",
-							__func__, my_nid, current->pid,
-							src ? src->vcpu->vcpu_id : -1, dst_vcpu_id);
-			//}
-#endif
 			BUG();
 			goto out;
 		}
 
 		/********** Popcorn recreated (synced across node ) ************/
 		dst = map->logical_map[cid];
-
-#ifdef CONFIG_POPCORN_HYPE
-		//if (distributed_process(current)) {
-			IPIVPRINTK("\t => %s(): [%d/%d] <%d> -ipi> <%d> - double check cid %d\n",
-						__func__, my_nid, current->pid,
-						src ? src->vcpu->vcpu_id : -1, dst_vcpu_id, (int)cid);
-		//}
-#endif
-
-		/* TODO CHECK.... metadata not synced */
-		/* pophype dones't need it - if on,  bitmap will be the vcpu_id */
-#if 0
-		if (kvm_lowest_prio_delivery(irq)) {
-			int l = -1;
-			for_each_set_bit(i, &bitmap, 16) {
-				if (!dst[i])
-					continue;
-				if (l < 0)
-					l = i;
-				else if (kvm_apic_compare_prio(dst[i]->vcpu, dst[l]->vcpu) < 0)
-					l = i;
-			}
-
-			bitmap = (l >= 0) ? 1 << l : 0;
-		}
-#endif
 	}
 
+	/* popcorn forces to ipi!!! */
 #ifdef CONFIG_POPCORN_HYPE
-#if HYPE_PERF_CRITICAL_DEBUG
-	//if (distributed_process(current))
-	{
-		static int cnt = 0; /* For debugging */
-		cnt++;
-		if (cnt < VM_SINGLE_HANDLE_DISPLAY_CNT || !(cnt % 10000)) {
-			IPIPRINTK("\t => %s(): [%d/%d] <%d> -ipi> <*%d*> - 8 "
-					"bitmap 0x%lx dst %p dst[0] %p "
-					//"->vcpu_id %d "
-					"irq->dest_id <%d?> %s #%d\n",
-					__func__, my_nid, current->pid,
-					src ? src->vcpu->vcpu_id : -1,
-					dst_vcpu_id, bitmap, dst, dst[0],
-					//dst[dst_vcpu_id]->vcpu->vcpu_id,
-					irq->dest_id,
-					irq->dest_mode == APIC_DEST_PHYSICAL ?
-						"PHYSICAL map TRUST" : "LOGICAL map DON'T TRUST", cnt);
-		}
-		// for dst[dst_vcpu_id]
-	}
-#endif
-#endif
-
-	/* popcorn forces to ipi !!! */
-#ifdef CONFIG_POPCORN_HYPE
-	//BUG_ON(!dst[dst_vcpu_id]); /* This can happen in vanilla kernel... if here, change to return 0*/
-	if (!dst[dst_vcpu_id]) { /* May run till user space but works for muti-threaded apps? */
+	if (!dst[dst_vcpu_id]) {
+		/* May run till user space but works for muti-threaded apps? */
 		*r = 0;
 #ifdef CONFIG_POPCORN_CHECK_SANITY
-		ret = false; // redundnat
+		ret = false;
 		printk(KERN_ERR "\t => found !dst[%d]\n", dst_vcpu_id);
 #endif
 		goto out;
@@ -1353,10 +1098,9 @@ bool popcorn_kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *sr
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 	BUG_ON(!dst[dst_vcpu_id]->vcpu);
 #endif
-	// dst[dst_vcpu_id]->vcpu->vcpu_id on my nid?
 #endif
-	/* popcorn assumption REMOTE_APIC
-	 * HACK - assumption - all the local irq are always !dest_map
+	/* Popcorn assumption REMOTE_APIC
+	 * Assuming all the local irq are always !dest_map
 	 * So here I've knew this is from remote (REMOTE_APIC),
 	 * now set it back to !dest_map
 	 * dst[dst_vcpu_id]->vcpu: source vcpu from a remote node
@@ -1373,8 +1117,7 @@ out:
 #endif
 
 #ifdef CONFIG_POPCORN_HYPE
-/* TODO tsk struct? */
-/*
+/**
  * vcpu: source vcpu
  * apic: source apic
  * Finally here! From remote.
@@ -1384,14 +1127,7 @@ int popcorn_kvm_apic_set_irq(struct kvm_vcpu *vcpu, struct kvm_lapic_irq *irq,
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
 
-	// this is popcorn. I set it because for debugging. (REMOTE_APIC).
-	// but i only do for !sipi, this is sipi route right?
 	dest_map = NULL;
-	// Too many. Don't trust irq->dest_id
-	IPIVPRINTK("\t\t => %s(): -kvmipi> irq->dest_id <%u?> %s\n",
-			__func__, irq->dest_id,
-			irq->dest_mode == APIC_DEST_PHYSICAL ? "TRUST" : "DON'T TRUST");
-	//BUG_ON(!popcorn_on_right_nid(irq->dest_id)); // irq->dest_id is not true
 	return popcorn_apic_accept_irq(apic, irq->delivery_mode, irq->vector,
 			irq->level, irq->trig_mode, dest_map);
 }
@@ -1461,12 +1197,9 @@ out:
  * Return 1 if successfully added and 0 if discarded.
  */
 #ifdef CONFIG_POPCORN_HYPE
-//extern bool hype_callin[][];
 #define LEN 8192
 unsigned long user_ram_start = 0x7ffec0000000;
-unsigned long user_ram_eip = 0x99000; // start_ip 612k < 1M real mode
-// = istart_ip = real_mode_header->trampoline_start
-//unsigned long user_start_second = 0xffffffff8108d680; // overflow
+unsigned long user_ram_eip = 0x99000; /* start_ip 612k < 1M real mode */
 #endif
 /* Accept/Inject irq on a dst apic/vcpu
  * apic: dst apic
@@ -1481,7 +1214,7 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 #ifdef CONFIG_POPCORN_CHECK_SANITY
 	if (unlikely(!vcpu)) {
 		printk(KERN_ERR "\n\ndelivery_mode %d\n\n", delivery_mode);
-		BUG(); // BUG_ON(!vcpu);
+		BUG();
 	}
 #endif
 	trace_kvm_apic_accept_irq(vcpu->vcpu_id, delivery_mode,
@@ -1490,28 +1223,6 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 	case APIC_DM_LOWEST: // 0x100
 		vcpu->arch.apic_arb_prio++;
 	case APIC_DM_FIXED: // 0x000
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
-		// many <0> doing APIC_ICR and <1>(remote) receives this
-		//if (vcpu->vcpu_id)
-		{
-			static unsigned int dm_fixed = 0;
-			dm_fixed++;
-			if (dm_fixed > 0 && dm_fixed < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-				POP_PK("\t\t%s(): [%d/%d] IRQ local APIC_DM_FIXED -> <%d> "
-						"trig_mode %d level %d apic_enabled(apic) %s "
-						" &&& other test %s (if(O)->trig_mode 1:set 0:clear) "
-						"kvm_x86_ops->deliver_posted_interrupt %s "
-						"dest_map %p #%u\n",
-						__func__, my_nid, current->pid,
-						vcpu->vcpu_id, trig_mode, level,
-						apic_enabled(apic) ? "O" : "X",
-						apic_test_vector(vector, apic->regs + APIC_TMR) !=
-							!!trig_mode ? "O" : "X",
-						kvm_x86_ops->deliver_posted_interrupt ? "O" : "X",
-													dest_map, dm_fixed);
-			}
-		}
-#endif
 		if (unlikely(trig_mode && !level))
 			break;
 
@@ -1546,34 +1257,21 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 		vcpu->arch.pv.pv_unhalted = 1;
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 		kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_REMRD -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	case APIC_DM_SMI:
 		result = 1;
 		kvm_make_request(KVM_REQ_SMI, vcpu);
 		kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_SMI -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	case APIC_DM_NMI:
 		result = 1;
 		kvm_inject_nmi(vcpu);
 		kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_NMI -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	case APIC_DM_INIT:
-// BSP at remote WORKING done in handle_apic_write
-//#ifdef CONFIG_POPCORN_HYPE
-//		KVM_EXIT_POPCORN_HYPE
-//#endif
 		if (!trig_mode || level) {
 			result = 1;
 			/* assumes that there are only KVM_APIC_INIT/SIPI */
@@ -1583,10 +1281,6 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			smp_wmb();
 			kvm_make_request(KVM_REQ_EVENT, vcpu);
 			kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-			POP_PK("\t\t%s(): local IRQ APIC_DM_INIT -> %d\n",
-						__func__, vcpu->vcpu_id);
-#endif
 		} else {
 			apic_debug("Ignoring de-assert INIT to vcpu %d\n",
 				   vcpu->vcpu_id);
@@ -1601,7 +1295,6 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 		SIPIPRINTK("\t\t#kvm_smp_boot [%d/%d]: "
 				"IRQ redirect this SIPI on real node of vcpu %d\n",
 				current->pid, smp_processor_id(), vcpu->vcpu_id);
-		//popcorn_send_sipi(vcpu->vcpu_id, vector); // old code
 #ifdef CONFIG_POPCORN_HYPE
 #if ENFORCE_TOUCH_USR
         if (vcpu->vcpu_id) {
@@ -1623,21 +1316,11 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			}
 			SIPIPRINTK("\n");
             SIPIPRINTK("-----------cnt = %lu af done----------\n", strlen(temp));
-
-//            if(copy_from_user(temp, (void __user *)(user_ram_start + user_start_second), ENFORCE_TOUCH_BYTES - 1))
-//                BUG();
-//			memset(temp + ENFORCE_TOUCH_BYTES - 1, 0, 1);
-//            printk("-----------------------origin start_second-----------\n");
-//            printk("%s\n", temp);
-//            printk("-----------------------------------------------------\n");
         }
 #endif
 #endif
+#endif /* CONFIG_POPCORN_HYPE */
 
-		// req(vector, vcpu)
-		// handler() like below
-		// next: see how to notify bsp when ap is done
-#endif
 		result = 1;
 		apic->sipi_vector = vector; /* AP will read it. */
 		/* make sure sipi_vector is visible for the receiver */
@@ -1653,9 +1336,6 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 		 * before NMI watchdog was enabled. Already handled by
 		 * kvm_apic_accept_pic_intr().
 		 */
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_EXTINT -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	default:
@@ -1680,28 +1360,6 @@ int popcorn_apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 	case APIC_DM_LOWEST: // 0x100
 		vcpu->arch.apic_arb_prio++;
 	case APIC_DM_FIXED: // 0x000
-#if defined(CONFIG_POPCORN_HYPE) && HYPE_PERF_CRITICAL_DEBUG && HYPEBOOTDEBUG
-		// many <0> does APIC_ICR and <1> receives this
-		//if (vcpu->vcpu_id)
-		{
-			static unsigned int dm_fixed = 0;
-			dm_fixed++;
-			if (dm_fixed > 0 && dm_fixed < VM_SINGLE_HANDLE_DISPLAY_CNT) {
-				POP_PK("\t\t%s(): [%d/%d] IRQ local APIC_DM_FIXED -> <%d> "
-						"trig_mode %d level %d apic_enabled(apic) %s "
-						" &&& other test %s (if(O)->trig_mode 1:set 0:clear) "
-						"kvm_x86_ops->deliver_posted_interrupt %s "
-						"dest_map %p #%u\n",
-						__func__, my_nid, current->pid,
-						vcpu->vcpu_id, trig_mode, level,
-						apic_enabled(apic) ? "O" : "X",
-						apic_test_vector(vector, apic->regs + APIC_TMR) !=
-							!!trig_mode ? "O" : "X",
-						kvm_x86_ops->deliver_posted_interrupt ? "O" : "X",
-													dest_map, dm_fixed);
-			}
-		}
-#endif
 		if (unlikely(trig_mode && !level))
 			break;
 
@@ -1721,9 +1379,6 @@ int popcorn_apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 				apic_clear_vector(vector, apic->regs + APIC_TMR);
 		}
 
-		// TODO if (delivery_mode == APIC_DM_FIXED)
-
-
 		if (kvm_x86_ops->deliver_posted_interrupt)
 			kvm_x86_ops->deliver_posted_interrupt(vcpu, vector);
 		else {
@@ -1739,27 +1394,18 @@ int popcorn_apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 		vcpu->arch.pv.pv_unhalted = 1;
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 		kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_REMRD -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	case APIC_DM_SMI:
 		result = 1;
 		kvm_make_request(KVM_REQ_SMI, vcpu);
 		kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_SMI -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	case APIC_DM_NMI:
 		result = 1;
 		kvm_inject_nmi(vcpu);
 		kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-		POP_PK("\t\t%s(): local IRQ APIC_DM_NMI -> %d\n", __func__, vcpu->vcpu_id);
-#endif
 		break;
 
 	case APIC_DM_INIT:
@@ -1772,11 +1418,6 @@ int popcorn_apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			smp_wmb();
 			kvm_make_request(KVM_REQ_EVENT, vcpu);
 			kvm_vcpu_kick(vcpu);
-#ifdef CONFIG_POPCORN_HYPE
-			/* BSP at remote - done in handle_apic_write */
-			POP_PK("\t\t%s(): local IRQ APIC_DM_INIT -> %d\n",
-						__func__, vcpu->vcpu_id);
-#endif
 		} else {
 			apic_debug("Ignoring de-assert INIT to vcpu %d\n",
 				   vcpu->vcpu_id);
@@ -1812,21 +1453,11 @@ int popcorn_apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 			}
 			SIPIPRINTK("\n");
             SIPIPRINTK("-----------cnt = %lu af done----------\n", strlen(temp));
-
-//            if(copy_from_user(temp, (void __user *)(user_ram_start + user_start_second), ENFORCE_TOUCH_BYTES - 1))
-//                BUG();
-//			memset(temp + ENFORCE_TOUCH_BYTES - 1, 0, 1);
-//            printk("-----------------------origin start_second-----------\n");
-//            printk("%s\n", temp);
-//            printk("-----------------------------------------------------\n");
         }
 #endif
 #endif
+#endif /* CONFIG_POPCORN_HYPE */
 
-		// req(vector, vcpu)
-		// handler() like below
-		// next: see how to notify bsp when ap is done
-#endif
 		result = 1;
 		apic->sipi_vector = vector; /* AP will read it. */
 		/* make sure sipi_vector is visible for the receiver */
@@ -1944,28 +1575,7 @@ static void apic_send_ipi(struct kvm_lapic *apic)
 		irq.dest_id = GET_APIC_DEST_FIELD(icr_high);
 
 	trace_kvm_apic_ipi(icr_low, irq.dest_id);
-
-// lmany
-//	apic_debug("icr_high 0x%x, icr_low 0x%x, "
-//		   "short_hand 0x%x, dest 0x%x, trig_mode 0x%x, level 0x%x, "
-//		   "dest_mode 0x%x, delivery_mode 0x%x, vector 0x%x, "
-//		   "msi_redir_hint 0x%x\n",
-//		   icr_high, icr_low, irq.shorthand, irq.dest_id,
-//		   irq.trig_mode, irq.level, irq.dest_mode, irq.delivery_mode,
-//		   irq.vector, irq.msi_redir_hint);
-#ifdef CONFIG_POPCORN_HYPE
-	{
-		int r;
-		r = kvm_irq_delivery_to_apic(apic->vcpu->kvm, apic, &irq, NULL);
-		if (r < 0) {
-			POP_PK(KERN_ERR "IPI sent FAIL succ cnt r %d "
-							"apic->vcpu->vcpu_id %d -> %d\n",
-							r, apic ? apic->vcpu->vcpu_id : -1, irq.dest_id);
-		}
-	}
-#else
 	kvm_irq_delivery_to_apic(apic->vcpu->kvm, apic, &irq, NULL);
-#endif
 }
 
 #ifdef CONFIG_POPCORN_HYPE
@@ -1974,62 +1584,12 @@ static void apic_send_ipi(struct kvm_lapic *apic)
  */
 int popcorn_apic_inject_ipi(struct kvm_lapic *apic, struct kvm_lapic_irq *irq, int dst_vcpu_id)
 {
-//	u32 icr_low = kvm_apic_get_reg(apic, APIC_ICR);
-//	u32 icr_high = kvm_apic_get_reg(apic, APIC_ICR2);
-//	struct kvm_lapic_irq irq;
-
-/*
- * pophype:
- * If I redirect the entire ipi request when apic is rebuilding the argv,
- * it cannot infer SIPI requests like APIC_DM_INIT and APIC_DM_STARTUP
- * (Should I try to replay all these result? (collecting APIC_ICR regs))
- *
- * What happens now? renote got this and do it but cannot get right ICR
- * reg info. So that cannot do SIPI tasks (and even callback).
- *
- * Don't get it from apic-reg again. The data is wrong
- */
-
-//	irq.vector = icr_low & APIC_VECTOR_MASK;
-//	irq.delivery_mode = icr_low & APIC_MODE_MASK;
-//	irq.dest_mode = icr_low & APIC_DEST_MASK;
-//	irq.level = (icr_low & APIC_INT_ASSERT) != 0;
-//	irq.trig_mode = icr_low & APIC_INT_LEVELTRIG;
-//	irq.shorthand = icr_low & APIC_SHORT_MASK;
-//	irq.msi_redir_hint = false;
-//	if (apic_x2apic_mode(apic))
-//		irq->dest_id = icr_high;
-//	else
-//		irq->dest_id = GET_APIC_DEST_FIELD(icr_high);
-//	trace_kvm_apic_ipi(icr_low, irq.dest_id);
-
-	//int r = -1;
 	int r = 0;
-	// mode 0 == APIC_DM_FIXED too many
-	if (irq->delivery_mode) {
-		/* When HANDLE_NET_MSI == 1, this happends even when idle.
-			delivery_mode == APIC_DM_LOWEST: checking src(lapic) now,
-			dest_id == 2/3: even when 2-vcpu case */
-		/* HANDLE_NET_MSI is about networking.
-			It didn't happend becuase we only injected interrupts into vcpu0 */
-		POP_PK("\t\t%s(): replay irq injection (("
-				"src %p apic->vcpu->vcpu_id(lapic) <%d> "
-				"vector %u delivery_mode %u "
-				"dest_mode %u level %d trig_mode %u "
-				"shorthand %u dest_id <%u> msi_redir_hint %d\n",
-				__func__, apic, apic->vcpu->vcpu_id, irq->vector,
-				irq->delivery_mode,
-				irq->dest_mode, irq->level, irq->trig_mode,
-				irq->shorthand, irq->dest_id, irq->msi_redir_hint);
-	}
 
-	// smp - mount_root()
-	//return kvm_irq_delivery_to_apic(apic->vcpu->kvm, apic, irq, REMOTE_APIC);
 	if (popcorn_kvm_irq_delivery_to_apic_fast(
 			apic->vcpu->kvm, apic, irq, &r, REMOTE_APIC, dst_vcpu_id)) // redundant
 		return r;
-	return 0; // redundant
-	//BUG(); /* this will happen now... */
+	return 0;
 }
 #endif
 
@@ -2223,7 +1783,6 @@ static void apic_timer_expired(struct kvm_lapic *apic)
  * On APICv, this test will cause a busy wait
  * during a higher-priority task.
  */
-
 static bool lapic_timer_int_injected(struct kvm_vcpu *vcpu)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
@@ -2301,17 +1860,6 @@ static void start_apic_timer(struct kvm_lapic *apic)
 		hrtimer_start(&apic->lapic_timer.timer,
 			      ktime_add_ns(now, apic->lapic_timer.period),
 			      HRTIMER_MODE_ABS);
-#if 0 // Jack
-		apic_debug("%s: bus cycle is %" PRId64 "ns, now 0x%016"
-			   PRIx64 ", "
-			   "timer initial count 0x%x, period %lldns, "
-			   "expire @ 0x%016" PRIx64 ".\n", __func__,
-			   APIC_BUS_CYCLE_NS, ktime_to_ns(now),
-			   kvm_apic_get_reg(apic, APIC_TMICT),
-			   apic->lapic_timer.period,
-			   ktime_to_ns(ktime_add_ns(now,
-					apic->lapic_timer.period)));
-#endif
 	} else if (apic_lvtt_tscdeadline(apic)) {
 		/* lapic timer in tsc deadline mode */
 		u64 guest_tsc, tscdeadline = apic->lapic_timer.tscdeadline;
@@ -2357,105 +1905,29 @@ static void apic_manage_nmi_watchdog(struct kvm_lapic *apic, u32 lvt0_val)
 	}
 }
 
-/*
- * Hight level
- * (Not going to inject irq yet)
- * For support recalc
- */
 static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 {
 	int ret = 0;
 #ifdef CONFIG_POPCORN_HYPE
-	struct kvm_vcpu *vcpu = apic->vcpu; /* THIS IS SRC VCPU*/
+	struct kvm_vcpu *vcpu = apic->vcpu; /* This is source vCPU */
 #if HYPE_PERF_CRITICAL_DEBUG
 	static int cnt_icr = 0;
 #endif
-	/* WORKING ON done in handle_apic_write */
 	if (distributed_process(current)) {
-		/* pophype - broadcast/replay + do locally!!! */
 		if (apic_x2apic_mode(apic))
-			printk(KERN_ERR "\n\n\t\tTODO support this 32bit\n\n");
+			printk(KERN_ERR "\n\t\tSupport this 32bit\n");
 
-		if (!(val & 0x40000) && /* avoid nested (according "APIC_SELF_IPI") */
+		if (!(val & 0x40000) && /* Avoid nested (according "APIC_SELF_IPI") */
 			((reg == APIC_DFR && !apic_x2apic_mode(apic)) ||
-			(reg == APIC_LDR && !apic_x2apic_mode(apic)))
-			/* Don't handle APIC_ICR (aka IPI) */
-			/* __apic_accpet_irq - APIC_DM_LOWEST 0x100 fallthrough to APIC_DM_FIXED 0x0 */
-			) { /* only support recalc */
+			(reg == APIC_LDR && !apic_x2apic_mode(apic)))) {
 			POP_PK("%s(): brocast + do locally - reg 0x%x (need 0xe0, 0xd0) vcpu\n",
 																__func__, reg);
 			popcorn_broadcast_apic_reg_write(vcpu->vcpu_id, reg, val);
-			//printk("Jack why this is not working? 1 reg %d (need 0xe0, 0xd0)\n",
-			//																reg);
-			// If we broad cast, do we do ipi twice? because here 1 + =kvmipi> 1 = 2 ???
 		}
 	}
-
-#if 0
-//	static unsigned long dbg = 0;
-//	static int cnt = 0;
-	/* NOT FULLY WORKING/TESTING YET!!! */
-	if (distributed_process(current) &&
-		//current->at_remote && // why this one is uncomment before 0606 ...
-		vcpu->vcpu_id) { // TODO... // && !smp_processor_id()) {
-		/* DON'T BE NESTED!!! */
-		/* ATTENTION:  smp_processor_id() can be any cpu */
-
-		/* OK.... TODO 0607 now I have to check whether this node owns
-			vcpu->vcpu_id. smp_processor_id() will not tell me about that */
-
-		////////////////////////////////////////////////////////////
-		////////////////////////////////////////////////////////////
-		//BUG_ON("TODO a function returning vcpu is on this node");
-		////////////////////////////////////////////////////////////
-		////////////////////////////////////////////////////////////
-
-		/* TODO BUG this only works for 2 nodes and 1cpu on 1 node */
-		if (!(my_nid && my_nid == vcpu->vcpu_id)) {
-			printk("\t%s(): (NOT SUPPORT) redirect from my [%d/%d] "
-					"<(%d) != %d> => <?> (reg %x val %x) #%d "
-					"(fix NESTING problem then turn on)\n",
-					__func__, my_nid, current->pid,
-					smp_processor_id(), vcpu->vcpu_id,
-					reg, val, cnt);
-
-			/* Not broadcast all but only a few in ipi __apic_accept_irq() */
-			////if (!(reg == APIC_ICR && val & 0x40000)) /* avoid nested reqs (according to code "APIC_SELF_IPI")*/
-			/* avoid nested reqs (according to code "APIC_SELF_IPI")*/
-			if (!(val & 0x40000) && // no nested
-				(reg == APIC_DFR && !apic_x2apic_mode(apic))) { // only support
-				popcorn_broadcast_apic_reg_write(vcpu->vcpu_id, reg, val);
-				printk("Jack why this is not working? 1\n");
-			//} else if (val & 0x40000) {
-			} else { // (val & 0x40000)
-				// from APIC_SELF_IPI
-			}
-			if (reg == APIC_DFR) {
-				printk("Jack why this is not working? 2\n");
-			}
-
-		} else {
-			printk("\t%s(): skip forward [%d/%d] <%d == %d> => <?>\n",
-					__func__, my_nid, current->pid, smp_processor_id(), vcpu->vcpu_id);
-		}
-
-		printk("\t%s(): [%d/%d] <%d> => <?>\n",
-				__func__, my_nid, current->pid, vcpu->vcpu_id);
-	} else {
-		dbg++;
-		if (dbg > 0 && dbg < 10) {
-			printk("\t%s(): vcpu->vcpu_id <%d> smp_processor_id() %d #%lu\n",
-						__func__, vcpu->vcpu_id, smp_processor_id(), dbg);
-		}
-	}
-#endif
 #endif
 
 	trace_kvm_apic_write(reg, val);
-
-	//lmany
-	//apic_debug("%s(): apic %p reg 0x%x val 0x%x\n",
-	//						__func__, apic, reg, val);
 
 	switch (reg) {
 	case APIC_ID:		/* Local APIC ID */
@@ -2529,21 +2001,18 @@ static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 		apic_set_reg(apic, APIC_ICR, val & ~(1 << 12));
 #if HYPE_PERF_CRITICAL_DEBUG
 #ifdef CONFIG_POPCORN_HYPE
-//#if HYPE_PERF_CRITICAL_DEBUG /* only #122, a few after first bash script finished */
-		/* TODO my node and apic->vcpu->vcpu_id if are the same then don't broadcast */
-		/* this will trigger dst cpu to invoke __apic_accept_irq() -
-											SIPI is also from here */
-		//if (distributed_process(current)) {
-			if (cnt_icr < 100 || vcpu->vcpu_id) {
-				cnt_icr++;
-				POP_PK("\t%s(): [%d/%d] local APIC_ICR (apic_send_ipi) "
-						"<%d> => <?> (__apic_accept_irq()) val 0x%x #%d\n",
-						__func__, my_nid, current->pid,
-						vcpu->vcpu_id, val, cnt_icr);
-			}
-		//}
+		/* My node and apic->vcpu->vcpu_id if are the same then don't broadcast.
+		 * This will trigger dst cpu to invoke __apic_accept_irq() -
+		 *										SIPI is also from here
+		 */
+		if (cnt_icr < 100 || vcpu->vcpu_id) {
+			cnt_icr++;
+			POP_PK("\t%s(): [%d/%d] local APIC_ICR (apic_send_ipi) "
+					"<%d> => <?> (__apic_accept_irq()) val 0x%x #%d\n",
+					__func__, my_nid, current->pid,
+					vcpu->vcpu_id, val, cnt_icr);
+		}
 		/* Looks like apic_send_ipi() fail will somehow retry w/o */
-//#endif
 #endif
 #endif
 		apic_send_ipi(apic);
@@ -2553,12 +2022,6 @@ static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 		if (!apic_x2apic_mode(apic))
 			val &= 0xff000000;
 		apic_set_reg(apic, APIC_ICR2, val);
-#ifdef CONFIG_POPCORN_HYPE
-		if (distributed_process(current)) {
-			POP_PK("\t\t%s(): local APIC_ICR2 <%d> => <?>\n",
-							__func__, apic->vcpu->vcpu_id);
-		}
-#endif
 		break;
 
 	case APIC_LVT0:
@@ -2590,11 +2053,6 @@ static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 
 		hrtimer_cancel(&apic->lapic_timer.timer);
 		apic_set_reg(apic, APIC_TMICT, val);
-#ifdef CONFIG_POPCORN_HYPE
-		// many
-		//POP_PK("\t\t%s(): <%d> local APIC_TMICT => start_apic_timer()\n",
-		//				__func__, apic->vcpu->vcpu_id);
-#endif
 		start_apic_timer(apic);
 		break;
 
@@ -2613,12 +2071,6 @@ static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 		break;
 
 	case APIC_SELF_IPI:
-#ifdef CONFIG_POPCORN_HYPE
-		if (distributed_process(current)) {
-			POP_PK("\t\t%s(): local APIC_SELF_IPI <%d> => <?>\n",
-							__func__, apic->vcpu->vcpu_id);
-		}
-#endif
 		if (apic_x2apic_mode(apic)) {
 			/* Prevent from nested. Keep local remote working */
 			apic_reg_write(apic, APIC_ICR, 0x40000 | (val & 0xff));
@@ -2637,14 +2089,6 @@ static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 int popcorn_apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 {
 	int ret = 0;
-	/* This is how I currently sync the apic_dst_map(logic/phys) */
-	POP_PK("=> %s(): remote apic req %p reg 0x%x val 0x%x (sync apic dst_map)\n",
-			//"(GOT from other node but not support yet, fix NESTING problem)\n", // 0712 commented out
-								__func__, apic, reg, val);
-	/* for cuurent code */
-	//BUG_ON(reg != APIC_DFR);
-	//return apic_reg_write(apic, reg, val);
-	//return 0;
 
 	/* vanilla */
 	switch (reg) {
@@ -2720,10 +2164,6 @@ void kvm_apic_write_nodecode(struct kvm_vcpu *vcpu, u32 offset)
 
 	apic_reg_read(vcpu->arch.apic, offset, 4, &val);
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* should we read locally or after delivered */
-	/* popcorn sipi current implementation read it locally */
-#endif
 	/* TODO: optimize to just emulate side effect w/o one more write */
 	apic_reg_write(vcpu->arch.apic, offset, val);
 }
@@ -2807,11 +2247,6 @@ void kvm_lapic_set_base(struct kvm_vcpu *vcpu, u64 value)
 {
 	u64 old_value = vcpu->arch.apic_base;
 	struct kvm_lapic *apic = vcpu->arch.apic;
-
-#ifdef CONFIG_POPCORN_HYPE
-	PHAPICPRINTK("[%d/%d] <%d> %s(): set_base\n",
-			my_nid, current->pid, vcpu->vcpu_id, __func__);
-#endif
 
 	if (!apic) {
 		value |= MSR_IA32_APICBASE_BSP;
@@ -2909,7 +2344,6 @@ void kvm_lapic_reset(struct kvm_vcpu *vcpu, bool init_event)
 
 #ifdef CONFIG_POPCORN_HYPE
 	if (vcpu->vcpu_id == 0 && kvm_apic_id(apic) == 0) {
-	//if (kvm_apic_id(apic) == 0) {
 		pophype_vcpu0 = vcpu;
 		IPIPRINTK("\tpophype %s(): [%d/%d] SAVE HOST VCPU0 %p "
 					"vcpu->vcpu_id %d kvm_apic_id(apic) %d "
@@ -3096,14 +2530,6 @@ int kvm_get_apic_interrupt(struct kvm_vcpu *vcpu)
 	if (vector == -1)
 		return -1;
 
-#ifdef CONFIG_POPCORN_HYPE
-	{
-		static unsigned long cnt = 0;
-		cnt++;
-		POP_PK("\t%s(): <%d> jack #%lu\n", __func__, vcpu->vcpu_id, cnt);
-	}
-#endif
-
 	/*
 	 * We get here even with APIC virtualization enabled, if doing
 	 * nested virtualization and L1 runs with the "acknowledge interrupt
@@ -3150,20 +2576,6 @@ void kvm_apic_post_state_restore(struct kvm_vcpu *vcpu,
 	if (ioapic_in_kernel(vcpu->kvm))
 		kvm_rtc_eoi_tracking_restore_one(vcpu);
 
-#if 0 /* check[100] - good */
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	{ int i;
-		for (i = 0; i < 100; ++i) {
-			printk("<%d> %s(): s->regs[%d] %x -> vcpu->arch.apic->regs[%d] %x\n",
-					vcpu->vcpu_id, __func__,
-					i, s->regs[i],
-					i, *((char*)(vcpu->arch.apic->regs) + i));
-//			printk("vcpu->arch.apic->regs[%d] %x\n",
-//					i, (char*)(vcpu->arch.apic->regs)[i]);
-		}
-	}
-#endif
-#endif
 	vcpu->arch.apic_arb_prio = 0;
 }
 
@@ -3385,8 +2797,7 @@ int kvm_lapic_enable_pv_eoi(struct kvm_vcpu *vcpu, u64 data)
 }
 
 #ifdef CONFIG_POPCORN_HYPE
-//static unsigned long cnt = 0;
-/* Receive pending events */
+/* Receiving pending events */
 #endif
 void kvm_apic_accept_events(struct kvm_vcpu *vcpu)
 {
@@ -3394,16 +2805,8 @@ void kvm_apic_accept_events(struct kvm_vcpu *vcpu)
 	u8 sipi_vector;
 	unsigned long pe;
 
-#if defined(CONFIG_POPCORN_HYPE) //&& defined(CONFIG_POPCORN_STAT)
-	/* #kvm_smp_boot: should be called right after AP OUT BLOCK */
-#endif
 	if (!kvm_vcpu_has_lapic(vcpu) || !apic->pending_events)
 		return;
-
-//#ifdef CONFIG_POPCORN_HYPE
-//	if (current->at_remote)
-//		SIPIPRINTK("\t#kvm_smp_boot: remote cannot see this then back trace\n");
-//#endif
 
 	/*
 	 * INITs are latched while in SMM.  Because an SMM CPU cannot
@@ -3475,13 +2878,6 @@ void kvm_apic_accept_events(struct kvm_vcpu *vcpu)
 			}
 			SIPIPRINTK("\n");
             SIPIPRINTK("-------cnt = %lu af done-----------\n", strlen(temp));
-
-//            if(copy_from_user(temp, (void __user *)(user_ram_start + user_start_second), ENFORCE_TOUCH_BYTES - 1))
-//                BUG();
-//			memset(temp + ENFORCE_TOUCH_BYTES - 1, 0, 1);
-//            SIPIPRINTK("-----------------------remote start_second-----------\n");
-//            SIPIPRINTK("%s\n", temp);
-//            SIPIPRINTK("-----------------------------------------------------\n");
 		}
 #endif
 #endif
