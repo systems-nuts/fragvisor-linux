@@ -86,19 +86,10 @@
 extern bool **hype_callin;
 extern bool **hype_callin_dynamic_alloc;
 
-//dbg
 extern pgd_t early_level4_pgt[PTRS_PER_PGD];
-
 
 char __attribute__((__aligned__(PAGE_SIZE))) pophype_data = 'a';
 char __attribute__((__aligned__(PAGE_SIZE))) pophype_bss;
-
-
-void msleep_at_bsp(int mins)
-{
-	POP_PK(KERN_INFO "\t\t== <BSP> (sleep %d * 60s...) ==\n", mins);
-	msleep(mins * 60 * 1000);
-}
 #endif
 
 /* Number of siblings per CPU package */
@@ -201,18 +192,8 @@ static void smp_callin(void)
 	 */
 	set_cpu_sibling_map(raw_smp_processor_id());
 	wmb();
-#ifdef CONFIG_POPCORN_HYPE
-	POP_PK("\t\t<%d> %s(): set_cpu_sibling_map() look?\n", cpuid, __func__);
-#endif
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* TODO retmoe signal */
-	POP_PK("\t\t<%d> %s(): notify_cpu_starting(%d) (TODO return)\n",
-											cpuid,  __func__, cpuid);
 	notify_cpu_starting(cpuid);
-#else
-	notify_cpu_starting(cpuid);
-#endif
 	/*
 	 * Allow the master to continue.
 	 */
@@ -223,20 +204,6 @@ static void smp_callin(void)
 										__func__, cpuid, phys_id);
 #endif
 }
-
-#ifdef CONFIG_POPCORN_HYPE
-#define POPCORN_VMCALL_DEBUG 100
-/* not working don't use */
-inline void popcorn_vmcall_debug(void)
-{
-#if HYPE_VMCALL_DEBUG
-#ifdef CONFIG_POPCORN_HYPE_DEBUG
-	/* func:out:in */
-	asm volatile ("vmcall"::"eax"(POPCORN_VMCALL_DEBUG));
-#endif
-#endif
-}
-#endif
 
 static int cpu0_logical_apicid;
 static int enable_start_cpu0;
@@ -252,34 +219,15 @@ static void notrace start_secondary(void *unused)
 	 */
 #ifdef CONFIG_POPCORN_HYPE
 	int cpu = smp_processor_id();
-	//wmb(); // DSM has handled it
 
-	/* 0603 - if put 2 printks side by side here, you will not see the second one.
-		Instead, it will somehow restart kernel....... */
-	//POP_PK("\t\tI'm AP %d\n", cpumask_test_cpu(cpu, cpu_callout_mask)); // if turn on bsp will take longer. (lots of dsm traffic)
 	POP_PK("\t\tpophype: I'm AP <%d>\n", cpu);
-
-	//POP_PK("\t\t %d\n", cpumask_test_cpu(cpu, cpu_callout_mask));
-	//POP_PK(KERN_INFO "\t\t%s: I'm AP\n", __func__);
-	//POP_PK(KERN_INFO "\t\t%s: I'm AP<%d>\n", __func__, cpu);
-	//POP_PK(KERN_INFO "\t\t%s: I'm AP<%d>\n", __func__, cpu);
-	//hype_callin[1] = true; /* remote guest kernel cannot printk() */
 	hype_callin_dynamic_alloc[HYPE_DEBUG_POINT0][cpu] = true;
-	//POP_PK("\t\t (%s)\n",
-	//POP_PK(KERN_INFO "\t\t%s: I'm AP<%d>\n", __func__, cpu);
 #endif
 
 	cpu_init();
 	x86_cpuinit.early_percpu_clock_init();
 	preempt_disable();
-#ifdef CONFIG_POPCORN_HYPE
-	//TODO notify origin /* should by done by DSM */
-	//POP_PK(KERN_INFO "\t#smpboot [%d/%d] AP %d smp_callin *TODO*\n",
-	//					my_nid, current->pid, cpu);
-	smp_callin(); /* TODO */
-#else
 	smp_callin();
-#endif
 	enable_start_cpu0 = 0;
 
 #ifdef CONFIG_X86_32
@@ -294,11 +242,10 @@ static void notrace start_secondary(void *unused)
 	 * Check TSC synchronization with the BP:
 	 */
 #ifdef CONFIG_POPCORN_HYPE
-	//hype_callin[HYPE_DEBUG_POINT7][cpu] = true;
 	hype_callin_dynamic_alloc[HYPE_DEBUG_POINT8][cpu] = true;
-	check_tsc_sync_target(); /* TODO */
+	check_tsc_sync_target();
 	if (&hype_callin_dynamic_alloc[HYPE_DEBUG_POINT9][cpu]) {
-		hype_callin_dynamic_alloc[HYPE_DEBUG_POINT9][cpu] = true; // last was 11->9
+		hype_callin_dynamic_alloc[HYPE_DEBUG_POINT9][cpu] = true;
 	} else {
 		POP_PK("\n\n\n");
 		POP_PK("HYPE_DEBUG_POINT9 DIE DIE DIE <%d>\n", cpu);
@@ -316,13 +263,6 @@ static void notrace start_secondary(void *unused)
 	lock_vector_lock();
 	setup_vector_irq(smp_processor_id());
 	set_cpu_online(smp_processor_id(), true);
-#ifdef CONFIG_POPCORN_HYPE
-#if !POPHYPE_HOST_KERNEL // comment out just for my convinience
-	//TODO notify origin
-	POP_PK(KERN_INFO "\t\t#smpboot %s(): [%d/%d] AP <%d> NOTIFY BSP "
-			"set set_cpu_online()\n", __func__, my_nid, current->pid, cpu);
-#endif
-#endif
 	unlock_vector_lock();
 	cpu_set_state_online(smp_processor_id());
 	x86_platform.nmi_init();
@@ -785,8 +725,7 @@ wakeup_secondary_cpu_via_init(int phys_apicid, unsigned long start_eip)
 
 #if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG
 void popcorn_hype_check_remote_cpus(void) {
-	/* TODO: make it GUEST specific? */
-	int interested_vcpuid = 1; // TODO more
+	int interested_vcpuid = 1;
 	POP_PK("pophype: smp: upto %d vcpu online\n", pophype_available_vcpu());
 	POP_PK("pophype: smp: <SMP> last check AP[%d] inited? "
 			"hype_callin_dy[%d][%d] [[[(%s)]]] ***LAST***",
@@ -952,19 +891,11 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 	unsigned long timeout;
 #ifdef CONFIG_POPCORN_HYPE
 #define LEN 100
-	//int i, loop = 1000000; //100:2480, 10000,199, 100000,19
-	//int i, loop = 1000, bsp_swait = 30; //100:2480, 10000,199, 100000,19
-	//int i, loop = 1000 * 1000, bsp_swait = 60; //100:2480, 10000,199, 100000,19
 #if !POPHYPE_HOST_KERNEL
 	int i, loop = 1000 * 1000, bsp_swait = 20; //100:2480, 10000,199, 100000,19 // used when long fault retry
-	//int i, loop = 1000 * 1000, bsp_swait = 30; //100:2480, 10000,199, 100000,19
 	int bsp_swait_first = 0;
 	int bsp_swait_second = 0;
 #else
-	/* WATCHOUT THIS WILL MAKE HOST FAILT TO BOOT SMP !!!....... */
-	/* DSM takes traffic espesically when debugging -
-				TODO try to uncommon all when !PERF_MODE*/
-	//int i, loop = 1000, bsp_swait = 10; //100:2480, 10000,199, 100000,19
 	int i, loop = 1; /* watch out printk... */
 	int bsp_swait = 10; /* vanilla = 10 */
 #endif
@@ -972,11 +903,6 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 	unsigned long cnt = 0; /* 4054000 */
 	bool first = true;
 	bool ap_olinen = true;
-	//char temp[LEN];
-	//int	i;
-	//memcpy(temp, (void*)start_ip, LEN - 1);
-	//if(copy_from_user(temp, (void __user *)start_ip, LEN - 1))
-	//	BUG();
 	HYPEBOOTDBGPRINTK("-------------------------------------------------------\n");
 	HYPEBOOTDBGPRINTK("Cannot read *start_ip......sad\n");
 	HYPEBOOTDBGPRINTK("get_uv_system_type() = %d\n", get_uv_system_type());
@@ -1054,12 +980,6 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 	HYPEBOOTDBGPRINTK("pgd_t init_level4_pgt[] %p pa 0x%lx\n",
 				init_level4_pgt, __pa(init_level4_pgt)); // 1a0e
 
-	/* mir(X) echo(O) */
-	//HYPEBOOTDBGPRINTK("pud_t level3_ident_pgt[512] %p pa 0x%lx\n",
-	//			level3_ident_pgt, __pa(level3_ident_pgt)); // 1a10
-	//HYPEBOOTDBGPRINTK("pmd_t level2_ident_pgt[512] %p pa 0x%lx\n",
-	//			level2_ident_pgt, __pa(level2_ident_pgt)); // 1a11
-
 	HYPEBOOTDBGPRINTK("pud_t level3_kernel_pgt[512] %p pa 0x%lx\n",
 				level3_kernel_pgt, __pa(level3_kernel_pgt)); // 1a13
 	HYPEBOOTDBGPRINTK("pmd_t level2_kernel_pgt[512] %p pa 0x%lx\n",
@@ -1085,14 +1005,6 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 	HYPEBOOTDBGPRINTK("guest ip 0xffffffff8134c402 pa 0x%lx\n", __pa(0xffffffff8134c402));
 	HYPEBOOTDBGPRINTK("guest sp 0xffffffff81bffce0 pa 0x%lx\n", __pa(0xffffffff81bffce0));
 	HYPEBOOTDBGPRINTK("\n---\n");
-//extern pud_t level3_kernel_pgt[512];
-//extern pud_t level3_ident_pgt[512];
-//extern pmd_t level2_kernel_pgt[512];
-////extern pmd_t level2_fixmap_pgt[512];
-//extern pmd_t __attribute__((__aligned__(PAGE_SIZE))) level2_fixmap_pgt[512];
-//extern pmd_t level2_ident_pgt[512];
-//extern pte_t level1_fixmap_pgt[512];
-//extern pgd_t init_level4_pgt[];
 
 	HYPEBOOTDBGPRINTK("-------------------------------------------------------\n");
 	HYPEBOOTDBGPRINTK("\n\n");
@@ -1152,11 +1064,6 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 				apic->wakeup_secondary_cpu ? "Oapic" : "Xnmi",
 						boot_error, !boot_error ? "O" : "X", cpu);
 	if (cpu == 1) {
-//		int ssleep = 15;
-//		POP_PK(KERN_INFO "\tBSP sent & spinwaits cpu %d sleep %ds...(safe) "
-//					"let ap go first for testing\n", cpu, ssleep);
-//		msleep(ssleep * 1000);
-//		ssleep_at_ap(ssleep);
 #if !POPHYPE_HOST_KERNEL
 		POP_PK("before handshake_signal AP sleep %ds\n", bsp_swait_first);
 		msleep(bsp_swait_first * 1000);
@@ -1174,13 +1081,11 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 		 */
 		boot_error = -1;
 #ifdef CONFIG_POPCORN_HYPE
-		//timeout = jiffies + 30*HZ;
 		timeout = jiffies + bsp_swait*HZ;
 #else
 		timeout = jiffies + 10*HZ;
 #endif
 
-		/* TODO Jack first check info */
 		while (time_before(jiffies, timeout)) {
 			if (cpumask_test_cpu(cpu, cpu_initialized_mask)) {
 				/*
@@ -1202,18 +1107,10 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 									cpu, cpumask_test_cpu(cpu, cpu_callout_mask));
 #endif
 				boot_error = 0;
-				if (cpu == 1) {
-//					int ssleep = 15;
-//					POP_PK(KERN_INFO "\tBSP sent & spinwaits cpu %d sleep %ds..."
-//							"(safe) let ap go first for testing\n", cpu, ssleep);
-					//msleep(ssleep * 1000);
-//					ssleep_at_ap(ssleep);
-				}
 				break;
 			}
 
 #ifdef CONFIG_POPCORN_HYPE
-//			udelay(100); /* Jack: skeptical */
 			for (i = 0; i < loop; i++) {
 				schedule();
 			}
@@ -1267,17 +1164,6 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 				ap_olinen = false;
 				break;
 			}
-			/*
-			 * WATCHOUT THIS IS A FOREVER LOOP in VANILLA..........
-			 */
-			//if (!(cnt % 100000)) { // when all printk on
-//			if (!(cnt % 100)) { // when all printk on
-//				POP_PK(KERN_INFO "\t\t2.RIGHT PLACE checking AP[1] "
-//							"has inited? wait till AP registers "
-//							"[[[(%s)]]] #%lu\n",
-//							hype_callin[HYPE_DEBUG_POINT1][1]?"O":"X", cnt);
-//			}
-//			cnt++;
 			for (i = 0; i < loop; i++) {
 				schedule();
 			}
@@ -1302,7 +1188,7 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle)
 
 #ifdef CONFIG_POPCORN_HYPE
 	for (i = HYPE_DEBUG_POINT0; i < HYPE_DEBUG_POINT_MAX; i++) {
-		/* HYPE_DEBUG_POINTi */
+		/* HYPE_DEBUG_POINT */
 		if (hype_callin_dynamic_alloc[i][cpu]) {
 			POP_PK("\t## <BSP>: check AP[%d] "
 					"hype_callin_dy[%d][%d] ***PASS***\n", cpu, i, cpu);
@@ -1339,10 +1225,6 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 	int apicid = apic->cpu_present_to_apicid(cpu);
 	unsigned long flags;
 	int err;
-
-#ifdef CONFIG_POPCORN_HYPE
-	POP_PK("+++++++++++++++=_---CPU UP  %u\n", cpu); // pr_debug term:X dmesg:O
-#endif
 
 	WARN_ON(irqs_disabled());
 
@@ -1398,48 +1280,13 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 	 * while doing so):
 	 */
 	local_irq_save(flags);
-#ifdef CONFIG_POPCORN_HYPE
-#if !POPHYPE_HOST_KERNEL
-	POP_PK("<BSP> check_tsc_sync_source(cpu) - 14 <%d>\n", cpu);
-//	if (cpu != 1) {
-		POP_PK("\t%s(): <BSP> 2nd sync for <%d>\n", __func__, cpu);
-				check_tsc_sync_source(cpu);
-//	} else {
-//		POP_PK("%s(): <BSP> skip 2nd sync for <%d>\n", __func__, cpu);
-//	}
-	// TODO TODO 2nd handshake with AP
-#else
 	check_tsc_sync_source(cpu);
-#endif
-#else
-	check_tsc_sync_source(cpu);
-#endif
 	local_irq_restore(flags);
 
-#ifdef CONFIG_POPCORN_HYPE
-#if !POPHYPE_HOST_KERNEL
-	POP_PK("<BSP> cpu_online(cpu) - 15 <%d>\n", cpu);
-//	if (cpu != 1) {
-		POP_PK("\t%s(): <BSP> check cpu_online for <%d>\n", __func__, cpu);
-		while (!cpu_online(cpu)) {
-			cpu_relax();
-			touch_nmi_watchdog();
-		}
-//	} else {
-//		POP_PK("%s(): <BSP> skip check cpu_online for <%d>\n", __func__, cpu);
-//	}
-#else
 	while (!cpu_online(cpu)) {
 		cpu_relax();
 		touch_nmi_watchdog();
 	}
-#endif
-#else
-	while (!cpu_online(cpu)) {
-		cpu_relax();
-		touch_nmi_watchdog();
-	}
-#endif
 
 	irq_unlock_sparse();
 
