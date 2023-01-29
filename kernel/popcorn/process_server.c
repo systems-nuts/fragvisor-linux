@@ -29,7 +29,6 @@
 #include <popcorn/cpuinfo.h>
 #include <popcorn/debug.h>
 
-//#include <popcorn/hype_file.h>
 #include <linux/file.h>
 
 #include "types.h"
@@ -176,9 +175,6 @@ static void __build_task_comm(char *buffer, char *path)
 ///////////////////////////////////////////////////////////////////////////////
 // Distributed mutex
 ///////////////////////////////////////////////////////////////////////////////
-//#define KERNEL_PGS (0xd0000 + 0x30000) // 0xd0000 + 0x30000 = 1048576
-//#define ORIGIN_FUTEX_SKIP (48000 + KERNEL_PGS)
-//#define REMOTE_FUTEX_SKIP (0 + KERNEL_PGS)
 #define ORIGIN_FUTEX_SKIP (0)
 #define REMOTE_FUTEX_SKIP (0)
 long process_server_do_futex_at_remote(u32 __user *uaddr, int op, u32 val,
@@ -205,7 +201,6 @@ long process_server_do_futex_at_remote(u32 __user *uaddr, int op, u32 val,
 	static unsigned long futex_at_remote_cnt = 0;
 	unsigned long futex_at_remote_thre;
 	unsigned long addr;
-	//BUG_ON(!uaddr || !uaddr2);
 	if (uaddr) {
 		BUG_ON(copy_from_user(&addr, uaddr, sizeof(unsigned long)));
 	}
@@ -285,7 +280,6 @@ static void process_remote_futex_request(remote_futex_request *req)
 	static unsigned long process_futex_at_origin_cnt = 0;
 	unsigned long process_futex_at_origin_thre;
 	unsigned long addr;
-	//BUG_ON(!req->uaddr || !req->uaddr2);
 	if (req->uaddr) {
 		BUG_ON(copy_from_user(&addr, req->uaddr, sizeof(unsigned long)));
 	}
@@ -302,13 +296,9 @@ static void process_remote_futex_request(remote_futex_request *req)
 	process_futex_at_origin_thre = ORIGIN_FUTEX_SKIP;
 	process_futex_at_origin_cnt++;
 
-//	if (req->uaddr &&
-//		(process_futex_at_origin_cnt > process_futex_at_origin_thre ||
-//		INTERESTED_GVA(addr))) {
-		FUTEXPRINTK(" f[%d] <-[%d/%d] 0x%x %p 0x%x #%lu\n", current->pid,
-				current->remote_pid, current->remote_nid,
-				req->op, req->uaddr, req->val, process_futex_at_origin_cnt);
-//	}
+	FUTEXPRINTK(" f[%d] <-[%d/%d] 0x%x %p 0x%x #%lu\n", current->pid,
+			current->remote_pid, current->remote_nid,
+			req->op, req->uaddr, req->val, process_futex_at_origin_cnt);
 #else
 	/*
 	printk(" f[%d] <-[%d/%d] 0x%x %p 0x%x\n", current->pid,
@@ -320,13 +310,9 @@ static void process_remote_futex_request(remote_futex_request *req)
 			tp, req->uaddr2, req->val2, req->val3);
 
 #ifdef CONFIG_POPCORN_HYPE
-//	if (req->uaddr &&
-//		(process_futex_at_origin_cnt > process_futex_at_origin_thre ||
-//		INTERESTED_GVA(addr))) {
-		FUTEXPRINTK(" f[%d] ->[%d/%d] 0x%x %p %d #%lu\n", current->pid,
-				current->remote_pid, current->remote_nid,
-				req->op, req->uaddr, ret, process_futex_at_origin_cnt);
-//	}
+	FUTEXPRINTK(" f[%d] ->[%d/%d] 0x%x %p %d #%lu\n", current->pid,
+			current->remote_pid, current->remote_nid,
+			req->op, req->uaddr, ret, process_futex_at_origin_cnt);
 #else
 	/*
 	printk(" f[%d] ->[%d/%d] 0x%x %p %d\n", current->pid,
@@ -522,9 +508,6 @@ static int __do_back_migration(struct task_struct *tsk, int dst_nid, void __user
 {
 	back_migration_request_t *req;
 	int ret;
-//#if defined(CONFIG_POPCORN_HYPE)
-//	int arch;
-//#endif
 
 	might_sleep();
 
@@ -548,15 +531,6 @@ static int __do_back_migration(struct task_struct *tsk, int dst_nid, void __user
 	memcpy(req->action, tsk->sighand->action, sizeof(req->action));
 	*/
 
-#if defined(CONFIG_POPCORN_HYPE)
-	/* Handled outside */
-//	if (dst_nid >= MAX_POPCORN_VCPU ) {
-//				// && dst_nid < 2 * MAX_POPCORN_VCPU) { // no need
-//		dst_nid = 0; // no need
-//    }
-////	if (dst_nid == POPHYPE_MIGRATE_BACK)
-////		dst_nid = 0;
-#endif
 	ret = copy_from_user(&req->arch.regsets, uregs,
 			regset_size(get_popcorn_node_arch(dst_nid)));
 	BUG_ON(ret != 0);
@@ -597,10 +571,6 @@ static int handle_remote_task_pairing(struct pcn_kmsg_message *msg)
 	tsk->remote_nid = from_nid;
 	tsk->remote_pid = req->my_pid;
 	tsk->remote->remote_tgids[from_nid] = req->my_tgid;
-#ifdef CONFIG_POPCORN_HYPE
-	//printk("pair: %s() at origin every migration [%d/%d]\n",
-	//		__func__, from_nid, req->my_tgid);
-#endif
 
 	put_task_struct(tsk);
 out:
@@ -867,22 +837,9 @@ static int remote_worker_main(void *data)
 				PSPRINTK("fd Recreated %d %d %d (ALL GOOD)\n", fd1, fd2, fd3);
 			} else {
 				BUG();
-				// if (f1 < 0 || f2 < 0 || f3 < 0) { }
-				//int __a = get_unused_fd_flags(flags);
-				//int __b = get_unused_fd_flags(flags);
-				//int __c = get_unused_fd_flags(flags);
-				// note: if (fd123 < 0) { put_unused_fd() } is requred
-				// or /dev/null
-				//PCNPRINTK_ERR("Since cannot open dummy file, plan C start\n");
-				//HPPRINTK("[%d] Opening fd %d done\n", current->pid, __a);
-				//HPPRINTK("[%d] Opening fd %d done\n", current->pid, __b);
-				//HPPRINTK("[%d] Opening fd %d done\n", current->pid, __c);
 			}
 		}
-		//PSPRINTK("Opening fd 0, 1, 2 done next available %d\n",
-		//								current->files->next_fd);
 	}
-#else /* kill me */
 #endif
 #endif
 
@@ -912,28 +869,9 @@ static int remote_worker_main(void *data)
 		sys_close(fd1);
 		sys_close(fd2);
 		sys_close(fd3);
-		//filp_close(f1, NULL);
 	} else {
-		/*
-		if (f1 < 0 || f2 < 0 || f3 <0) {
-			put_unused_fd(0);
-			put_unused_fd(1);
-			put_unused_fd(2);
-
-			// Somehow other fds are left - exit not properly at remote //
-			put_unused_fd(3);
-			put_unused_fd(4);
-			put_unused_fd(5);
-			put_unused_fd(6);
-			put_unused_fd(7);
-			put_unused_fd(8);
-			put_unused_fd(9);
-		}
-		*/
 		BUG();
 	}
-#else /* kill me */
-	;
 #endif
 #endif
 
@@ -1036,7 +974,6 @@ int request_remote_work(pid_t pid, struct pcn_kmsg_message *req)
 		}
 		POP_PK(KERN_INFO"%s: fixed origin task %d for remote work %d\n",
 										__func__, pid, req->header.type);
-		//goto out_err;
 	}
 
 	/**
@@ -1057,18 +994,14 @@ int request_remote_work(pid_t pid, struct pcn_kmsg_message *req)
 		__put_task_remote(rc);
 	} else {
 		WARN_ON(tsk->remote_work);
-		while (tsk->remote_work) // Jack DEX BUG FIX
-			; // Jack DEX BUG FIX
+		while (tsk->remote_work)
+			;
 		tsk->remote_work = req;
 		complete(&tsk->remote_work_pended); /* implicit memory barrier */
 	}
 
 	put_task_struct(tsk);
 	return 0;
-
-//out_err:
-	pcn_kmsg_done(req);
-	return ret;
 }
 
 static void __process_remote_works(void)
@@ -1220,17 +1153,12 @@ static int __do_migration(struct task_struct *tsk, int dst_nid, void __user *ure
 		__unlock_remote_contexts_out(dst_nid);
 
 		/* First migration from origin */
-		//PSPRINTK("First migration\n");
-		//get_unused_fd_flags(O_CREAT);
-		//get_unused_fd_flags(O_CREAT);
-		//get_unused_fd_flags(O_CREAT);
-		//PSPRINTK("Opening fd 0, 1, 2 done\n");
 		{
 			int cur_total_files_cnt = jack_traverse_thread_files(current, 1, 1);
 			cur_total_files_cnt += 0; // fixing compilterwarning
 			PSPRINTK("do_migrate: cur total file cnt %d\n", cur_total_files_cnt);
 		}
-		jack_do_file_migration(current); // TODO: name
+		jack_do_file_migration(current);
 	}
 	/*
 	 * tsk->remote != NULL implies this thread is distributed (migrated away).
@@ -1251,19 +1179,15 @@ static int __do_migration(struct task_struct *tsk, int dst_nid, void __user *ure
  * Hype
  */
 
-/* TODO: This has to be in user:
+/* Workitem: This has to be in user:
  * hypercall -> return to user with vm_exit=xxx
  *  (user) syscall pophype_migration_flag on
  *  (user) syscall flush_dsm (when should I do this) (search destroy rc)
  *  (user) syscall migration (rely on pophype_migration_flag to know it should do optimized migration)
  *  (user) syscall pophype_migration_flag off
- *  (user)
- *
  */
-//extern int gcpus[];
 /* pophype migration request from guest VM */
 /* only sync kernel data. user needs to perform migration */
-/* TODO rename and this function is redundant */
 static int __pophype_do_migrate(int dst_nid, int dst_vcpu)
 {
     int ret = 0; /* good */
@@ -1273,9 +1197,9 @@ static int __pophype_do_migrate(int dst_nid, int dst_vcpu)
 			dst_nid, dst_vcpu,
             distributed_remote_process(current) ? "REMOTE" : "ORIGIN");
 
-	popcorn_update_remote_vcpu(dst_nid, dst_vcpu); // TODO: to origin 0
+	popcorn_update_remote_vcpu(dst_nid, dst_vcpu);
 
-    return ret; // let userspace to do back_migration()
+    return ret; /* let userspace to do back_migration() */
 }
 #endif
 
@@ -1314,8 +1238,8 @@ int process_server_do_migration(struct task_struct *tsk, unsigned int dst_nid, v
 		ret = __do_migration(tsk, dst_nid, uregs);
 		BUG_ON(ret);
 	} else if (dst_nid >= 100 && dst_nid < 1000) {
-		a0 = dst_nid/100; // a0, target nid, 1,2,3 for example
-		dst_nid -= a0*100;
+		a0 = dst_nid / 100; // a0, target nid, 1,2,3 for example
+		dst_nid -= a0 * 100;
 		__pophype_do_migrate(a0, dst_nid);
 		BUG_ON(dst_nid >= MAX_POPCORN_VCPU);
         ret = __do_migration(tsk, a0, uregs);
@@ -1352,7 +1276,7 @@ static void popcorn_ask_remote_tgid(int nid, struct remote_context *rc)
 	req->from_pid = current->pid;
 	req->ws = ws->id;
 
-	BUG_ON(!rc->remote_tgids[0]); // if works kill me
+	BUG_ON(!rc->remote_tgids[0]);
 	req->origin_pid = rc->remote_tgids[0];
 
 	req->src_tgid = current->tgid;
@@ -1419,18 +1343,6 @@ static void process_remote_ask_origin_tgid_request(struct work_struct *work)
 							from_nid, req->from_pid, req->remote_pid);
 		send_tgid_to_remote_at_origin(from_nid, dst_nid, remote_pid, forward_src_tgid);
 	}
-	// (int forward_src_tgid)
-//	{
-//		//struct wait_station *ws = get_wait_station(current);
-//		origin_ask_remote_tgid_request_t *req =
-//				kmalloc(sizeof(*req), GFP_KERNEL);
-//		//req->ws = ws->id;
-//		req->src_tgid = forward_src_tgid;
-//		req->remote_pid = rc->remote_tgids[dst_nid];
-//		pcn_kmsg_send(PCN_KMSG_TYPE_ORIGIN_ASK_REMOTE_TGID_REQUEST,
-//										dst_nid, req, sizeof(*req));
-//		kfree(req);
-//	}
 	/* Redirect (all) done */
 
 	res->dst_tgid = dst_tgid;
@@ -1510,8 +1422,6 @@ int __init process_server_init(void)
 										remote_ask_origin_tgid_request);
 	REGISTER_KMSG_HANDLER(PCN_KMSG_TYPE_ORIGIN_ASK_REMOTE_TGID_REQUEST,
 										origin_ask_remote_tgid_request);
-	//REGISTER_KMSG_HANDLER(PCN_KMSG_TYPE_ORIGIN_ASK_REMOTE_TGID_RESPONSE,
-	//									origin_ask_remote_tgid_response);
 	REGISTER_KMSG_HANDLER(PCN_KMSG_TYPE_REMOTE_ASK_ORIGIN_TGID_RESPONSE,
 										remote_ask_origin_tgid_response);
 
