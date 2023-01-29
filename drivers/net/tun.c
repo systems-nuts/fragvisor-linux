@@ -126,8 +126,6 @@ static inline bool pophype_print_skb(struct sk_buff *skb,
 #endif
 
 /* Uncomment to enable debugging */
-/* #define TUN_DEBUG 1 */
-
 #ifdef TUN_DEBUG
 static int debug;
 
@@ -506,7 +504,6 @@ static u16 tun_select_queue(struct net_device *dev, struct sk_buff *skb,
 	tcph = (struct tcphdr *)skb_transport_header(skb);
 	txq = ntohs(tcph->dest);
 #else
-	//txq = skb_get_hash(skb);
 	txq = __skb_get_hash_symmetric(skb);
 #endif
 	txq2 = txq;
@@ -538,32 +535,6 @@ static u16 tun_select_queue(struct net_device *dev, struct sk_buff *skb,
 		while (unlikely(txq >= numqueues))
 			txq -= numqueues;
 	}
-
-//#if defined(CONFIG_POPCORN_HYPE)
-#if 0
-{
-	struct tcphdr *tcph = (struct tcphdr *)skb_transport_header(skb);
-	int dstp = ntohs(tcph->dest);
-	//if (dstp < 0)
-	//	dstp = 0;
-	txq = dstp % tun->numqueues;
-	//return txq;
-	switch(dstp) {
-		case 5052:
-			txq = 0;
-		break;
-		case 5053:
-			txq = 1;
-		break;
-		case 5054:
-			txq = 2;
-		break;
-		case 5055:
-			txq = 3;
-		break;
-	}
-}
-#endif
 
 	rcu_read_unlock();
 	return txq;
@@ -954,16 +925,12 @@ static netdev_tx_t tun_net_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct tun_file *tfile;
 	u32 numqueues = 0;
 
-//#if defined(CONFIG_POPCORN_HYPE) && HYPE_PERF_NET_DEBUG
-//#if 1 // DEBUGGING
-#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG // DEBUGGING
+#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG
 	static u64 cnt = 0;
 	cnt++;
 	/* host kernel */
 	CRITICALNETPK("(host) pophype: vhost-net: <%d> %s: %s(): <(inject)- #%llu\n",
 								smp_processor_id(), __FILE__, __func__, cnt);
-//	if (cnt < 300)
-//		dump_stack();
 	if ((cnt > 70 && cnt < 100) || !(cnt % 1000)) {
 		POP_PK("(host) pophype: vhost-net: <%d> %s(): "
 				"skb %p dev \"%s\" rxq #%d #%llu (%s)\n",
@@ -982,9 +949,7 @@ static netdev_tx_t tun_net_xmit(struct sk_buff *skb, struct net_device *dev)
 	tfile = rcu_dereference(tun->tfiles[txq]);
 	numqueues = ACCESS_ONCE(tun->numqueues);
 
-//#if 1 // DEBUGGING
-#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG // DEBUGGING
-	//if ((cnt > 70 && cnt < 100) || !(cnt % 1000)) {
+#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG
 	if ((cnt < 200) || !(cnt % 1000)) {
 		POP_PK("(host) pophype: vhost-net: <%d> %s(): "
 				"dev \"%s\" tun->numqueues %d #%llu\n",
@@ -1008,8 +973,7 @@ static netdev_tx_t tun_net_xmit(struct sk_buff *skb, struct net_device *dev)
 			struct tun_flow_entry *e;
 			e = tun_flow_find(&tun->flows[tun_hashfn(rxhash)],
 					rxhash);
-//#if 1 // DEBUGGING
-#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG // DEBUGGING
+#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG
 		if ((cnt > 70 && cnt < 100) || !(cnt % 1000)) {
 			if (e) {
 				POP_PK("(host) pophype: <%d> %s(): "
@@ -1079,8 +1043,8 @@ static netdev_tx_t tun_net_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* Asynchronously notify userspace (above)*/
 
 	/* Wake up blocking process (below)
-		-> sock_def_readable -> wake_up_interruptible_sync_poll
-				in ./net/core/sock.c */
+	 * 		-> sock_def_readable -> wake_up_interruptible_sync_poll
+	 *				in ./net/core/sock.c */
 #endif
 	tfile->socket.sk->sk_data_ready(tfile->socket.sk);
 
@@ -1302,41 +1266,12 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	struct tcphdr *tcph;
 #endif
 
-#if 1
-	{
-		static u64 cnt = 0;
-		cnt++;
-		if ((cnt > 70 && cnt < 100) || !(cnt % 1000)) {
-			VHOSTNET_OPTIMIZE_PK("%s(): (tun->flags & IFF_NO_PI) %d "
-								"(tun->flags & IFF_VNET_HDR) %d\n",
-								__func__, tun->flags & IFF_NO_PI,
-								tun->flags & IFF_VNET_HDR);
-			VHOSTNET_OPTIMIZE_PK("%s(): [cmp] vanilla at origin (from=msg) "
-									"msg->type %d\n", __func__, from->type);
-		}
-	}
-#endif
-
 	if (!(tun->flags & IFF_NO_PI)) {
 		if (len < sizeof(pi)) {
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 1 (not here)\n", __func__);
-#endif
 			return -EINVAL;
 		}
 		len -= sizeof(pi);
 
-#if POPHYPE_NET_OPTIMIZE
-		{
-			static u64 cnt = 0;
-			cnt++;
-			if ((cnt > 70 && cnt < 100) || cnt > 1000) {
-					//!(cnt % 1000) ) {
-				printk("%s(): 1 - 1 there is a copy_from_iter "
-						"so the ptr moved (testing)\n", __func__);
-			}
-		}
-#endif
 		n = copy_from_iter(&pi, sizeof(pi), from);
 		if (n != sizeof(pi))
 			return -EFAULT;
@@ -1346,9 +1281,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		int vnet_hdr_sz = READ_ONCE(tun->vnet_hdr_sz);
 
 		if (len < vnet_hdr_sz) {
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 2 (not here)\n", __func__);
-#endif
 			return -EINVAL;
 		}
 		len -= vnet_hdr_sz;
@@ -1361,47 +1293,7 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		    tun16_to_cpu(tun, gso.csum_start) + tun16_to_cpu(tun, gso.csum_offset) + 2 > tun16_to_cpu(tun, gso.hdr_len))
 			gso.hdr_len = cpu_to_tun16(tun, tun16_to_cpu(tun, gso.csum_start) + tun16_to_cpu(tun, gso.csum_offset) + 2);
 
-#if POPHYPE_NET_OPTIMIZE
-		{
-			static u64 cnt = 0;
-			cnt++;
-			if ((cnt > 70 && cnt < 100) || !(cnt % 1000)) {
-				printk("%s(): [ck] gso.hdr_len %d, "
-						"tun16_to_cpu(tun, gso.hdr_len) %d > len %lu, "
-						"sizeof(pi) %lu sizeof(gso) %lu [remove me for perf]\n",
-						__func__, gso.hdr_len, tun16_to_cpu(tun, gso.hdr_len),
-						len, sizeof(pi), sizeof(gso));
-				printk("%s(): [ck] gso.hdr_len %d = cpu_to_tun16("
-					"tun16_to_cpu(tun, gso.csum_start) %d (%d) + "
-						"tun16_to_cpu(tun, gso.csum_offset) %d (%d) + 2)  %d"
-					"\n",
-					__func__, gso.hdr_len,
-					tun16_to_cpu(tun, gso.csum_start), gso.csum_start,
-					tun16_to_cpu(tun, gso.csum_offset), gso.csum_offset,
-					cpu_to_tun16(tun, tun16_to_cpu(tun, gso.csum_start) +
-									tun16_to_cpu(tun, gso.csum_offset) + 2));
-			}
-		}
-#endif
 		if (tun16_to_cpu(tun, gso.hdr_len) > len) {
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 333 - gso.hdr_len %d, "
-					"tun16_to_cpu(tun, gso.hdr_len) %d > "
-								"len %lu (WRONG), sizeof(pi) %lu "
-								"sizeof(gso) %lu\n",
-								__func__, gso.hdr_len,
-								tun16_to_cpu(tun, gso.hdr_len),
-								len, sizeof(pi), sizeof(gso)); // pi:4 gso:10
-			printk("%s(): [ck] gso.hdr_len %d = cpu_to_tun16("
-					"tun16_to_cpu(tun, gso.csum_start) %d (%d) + "
-						"tun16_to_cpu(tun, gso.csum_offset) %d (%d) + 2)  %d"
-					"\n",
-					__func__, gso.hdr_len,
-					tun16_to_cpu(tun, gso.csum_start), gso.csum_start,
-					tun16_to_cpu(tun, gso.csum_offset), gso.csum_offset,
-					cpu_to_tun16(tun, tun16_to_cpu(tun, gso.csum_start) +
-									tun16_to_cpu(tun, gso.csum_offset) + 2));
-#endif
 			return -EINVAL;
 		}
 		iov_iter_advance(from, vnet_hdr_sz - sizeof(gso));
@@ -1411,9 +1303,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		align += NET_IP_ALIGN;
 		if (unlikely(len < ETH_HLEN ||
 			     (gso.hdr_len && tun16_to_cpu(tun, gso.hdr_len) < ETH_HLEN))) {
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 4\n", __func__);
-#endif
 			return -EINVAL;
 		}
 	}
@@ -1451,9 +1340,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		return PTR_ERR(skb);
 	}
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* I think I have passed this line */
-#endif
 	if (zerocopy)
 		err = zerocopy_sg_from_iter(skb, from);
 	else {
@@ -1478,9 +1364,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 					  tun16_to_cpu(tun, gso.csum_offset))) {
 			tun->dev->stats.rx_frame_errors++;
 			kfree_skb(skb);
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 5\n", __func__);
-#endif
 			return -EINVAL;
 		}
 	}
@@ -1500,9 +1383,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 			default:
 				tun->dev->stats.rx_dropped++;
 				kfree_skb(skb);
-#if POPHYPE_NET_OPTIMIZE
-				printk("%s(): 6\n", __func__);
-#endif
 				return -EINVAL;
 			}
 		}
@@ -1531,9 +1411,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		default:
 			tun->dev->stats.rx_frame_errors++;
 			kfree_skb(skb);
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 7\n", __func__);
-#endif
 			return -EINVAL;
 		}
 
@@ -1544,9 +1421,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		if (skb_shinfo(skb)->gso_size == 0) {
 			tun->dev->stats.rx_frame_errors++;
 			kfree_skb(skb);
-#if POPHYPE_NET_OPTIMIZE
-			printk("%s(): 8\n", __func__);
-#endif
 			return -EINVAL;
 		}
 
@@ -1574,10 +1448,6 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 
 	tun->dev->stats.rx_packets++;
 	tun->dev->stats.rx_bytes += len;
-
-#if POPCORN_STAT_MQ_INFO
-	//= tun->dev->stats.rx_packets
-#endif
 
 #ifdef POPCORN_TUN_DEBUG_TX
 	if ((tun->numqueues != 1) && !tfile->detached) {
@@ -1827,89 +1697,6 @@ static int tun_sendmsg(struct socket *sock, struct msghdr *m, size_t total_len)
 	struct tun_file *tfile = container_of(sock, struct tun_file, socket);
 	struct tun_struct *tun = __tun_get(tfile);
 
-#if defined(CONFIG_POPCORN_HYPE) && HYPE_PERF_NET_DEBUG
-	static u64 cnt = 0;
-	cnt++;
-	/* host kernel */
-	CRITICALNETPK("\tpophype: vhost-net: <%d> %s: %s(): -> #%llu\n",
-							smp_processor_id(), __FILE__, __func__, cnt);
-//	if (cnt < 300)
-//		dump_stack();
-#endif
-
-#if POPHYPE_NET_OPTIMIZE
-	{
-		/* (m->msg_controllen && m->msg_control): occasionally happens */
-		static u64 cnt = 0, zcopy_cnt = 1;
-		cnt++;
-		if ((m->msg_controllen && m->msg_control)) {
-			//zcopy_cnt++;
-				/* comment out for disabling printking !msg_control
-						I think zcopy doesn't happen for nginx/ab test */
-		}
-		if ((cnt > 70 && cnt < 100) || !(cnt % 1000) || !(zcopy_cnt % 10) ||
-								m->msg_iter.count == 233) { // check at origin host
-			int pos = 1;
-			struct kvec *iov = (struct kvec*)m->msg_iter.iov;
-			POP_PK("\tpophype: vhost-net: opti: vanilla: <%d> %s: %s(): "
-					"m->msg_namelen %d m->msg_iter[meta_data].iov %p (iov is from vq) "
-					"m->msg_control %p m->msg_controllen %lu (zcopy_used related happens) "
-					"msg->msg_iter.iov->iov_base %p "
-					"msg->msg_iter.[nr_segs] %lu "
-					"msg->msg_iter.[count] %lu (total) "
-					"msg->msg_iter.[iov_offset] %lu "
-					"msg->msg_iter.[iov]->iov_len %lu "
-					"msg->msg_iter.type %d "
-					"[[[sock %p]]] %lu #%llu #%llu\n",
-					smp_processor_id(), __FILE__, __func__,
-					m->msg_namelen, m->msg_iter.iov,
-					m->msg_control, m->msg_controllen,
-					m->msg_iter.iov->iov_base,
-					m->msg_iter.nr_segs,
-					m->msg_iter.count,
-					m->msg_iter.iov_offset,
-					m->msg_iter.iov->iov_len,
-					m->msg_iter.type,
-					sock, total_len,
-					cnt, zcopy_cnt);
-			if (!(zcopy_cnt % 10)) { /* prevent from many printk */
-				zcopy_cnt++;
-			}
-			while (m->msg_iter.nr_segs > pos) {
-				iov++;
-				pos++;
-				printk("\t\tiov[#%d] -> iov_base %p iov_len %lu\n",
-								pos, iov->iov_base, iov->iov_len);
-			}
-#if 0
-			if (!(cnt % 1000)) {
-				ssize_t n;
-				struct virtio_net_hdr gso = { 0 };
-				struct iov_iter *from = &m->msg_iter;
-				int len = m->msg_iter.count;
-				n = copy_from_iter(&gso, sizeof(gso), from);
-				BUG_ON(n != sizeof(gso));
-				printk("[ck][RIGHT] copy_from_iter -> "
-						"tun16_to_cpu(tun, gso.hdr_len) be %d le %d > len %d (WRONG) sizeof(gso) %lu\n",
-											//tun16_to_cpu(tun, gso.hdr_len), len);
-											be16_to_cpu((__force __be16)gso.hdr_len),
-											le16_to_cpu((__force __le16)gso.hdr_len),
-											len, sizeof(gso));
-			}
-#endif
-		}
-		/* happens a lot (not sure from vcpu0/1)!!!!!!!!!
-				Actually controllen=8 but control=null..... */
-		//if (m->msg_controllen) {
-		//	/* happens (8) when ssh into VM */
-		//	POP_PK("\t(BAD) pophype: vhost-net-opti: "
-		//			"<%d> %s: %s(): m->msg_control %p m->msg_controllen %d\n",
-		//			smp_processor_id(), __FILE__, __func__,
-		//			m->msg_control, m->msg_controllen);
-		//}
-	}
-#endif
-
 	if (!tun)
 		return -EBADFD;
 
@@ -1925,16 +1712,6 @@ static int tun_recvmsg(struct socket *sock, struct msghdr *m, size_t total_len,
 	struct tun_file *tfile = container_of(sock, struct tun_file, socket);
 	struct tun_struct *tun = __tun_get(tfile);
 	int ret;
-
-#if defined(CONFIG_POPCORN_HYPE) && HYPE_PERF_NET_DEBUG
-	static u64 cnt = 0;
-	cnt++;
-	/* kernel host */
-	CRITICALNETPK("\tpophype: vhost-net: <%d> %s(): <- #%llu\n",
-								smp_processor_id(), __func__, cnt);
-//	if (cnt < 300)
-//		dump_stack();
-#endif
 
 	if (!tun)
 		return -EBADFD;
