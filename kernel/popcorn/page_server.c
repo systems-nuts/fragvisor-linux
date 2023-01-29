@@ -1604,9 +1604,8 @@ static int __claim_remote_page(struct task_struct *tsk, struct mm_struct *mm, st
 		!page_trans)
 	{
 		if (rp->result != 0 && is_clean_bit) {
-			printk("Jack - %d %x wrong\n", rp->result, rp->result); /* retry = 78 */
+			printk("%d %x wrong\n", rp->result, rp->result); /* retry = 78 */
 		}
-		//BUG_ON("!pg_mine must transfer page");
 		if (NOTINTERESTED_GVA(addr)) {
 			printk(" [%d] %lx !pg_mine but must succ RETRY (Wierd - "
 								"my patch applied)\n", tsk->pid, addr);

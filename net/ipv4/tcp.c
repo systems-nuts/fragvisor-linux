@@ -1116,7 +1116,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 	if (msg->msg_iter.count == 233) {
 		static u64 host_cnt = 0;
 		host_cnt++;
-		POP_PK("Jack: [host]: vanilla: <%d> sk %p "
+		POP_PK("[host]: vanilla: <%d> sk %p "
 				"msg->msg_iter.count [[[%lu]]](total bytes) = size %lu "
 				"msg->msg_namelen %d (blocks) ->msg_controllen [%lu] "
 				"msg->msg_iter.iov %p "
@@ -1141,7 +1141,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 		static u64 cnt = 0;
 		cnt++;
 		if ((cnt > 70 && cnt < 100) || !(cnt % 1000) || msg->msg_controllen) {
-			POP_PK("Jack: vanilla: <%d> sk %p "
+			POP_PK("vanilla: <%d> sk %p "
 					"msg->msg_iter.count [[[%lu]]](total bytes) = size %lu "
 					"msg->msg_namelen %d (blocks) ->msg_controllen [%lu] "
 					"msg->msg_iter.iov %p "
@@ -1167,7 +1167,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 		if (smp_processor_id() && !msg->msg_controllen && cnt > 1000) {
 			static u64 cnt2 = 0; // net on vcpu2 cnt
 			cnt2++;
-			POP_PK("Jack <%d> sk %p "
+			POP_PK("<%d> sk %p "
 					"[cmp] msg->msg_iter.count [[[%lu]]](total bytes) = len/size %lu "
 					"msg->msg_namelen %d (blocks) msg->msg_controllen %lu  msg->msg_flags 0x%x "
 					"msg->msg_iter.nr_segs %lu "
@@ -1188,7 +1188,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 					msg->msg_iter.iov->iov_base,
 					msg->msg_iter.iov->iov_len,
 					cnt, cnt2);
-			POP_PK("Jack <%d> [workingon] TODO do msghdr copy to host origin kernel #%llu 2#%llu\n",
+			POP_PK("<%d> [workingon] TODO do msghdr copy to host origin kernel #%llu 2#%llu\n",
 												smp_processor_id(), cnt, cnt2);
 			// TODO - BUG_ON(SIZE)
 
@@ -1211,7 +1211,7 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 	flags = msg->msg_flags;
 	if ((flags & MSG_FASTOPEN) && !tp->repair) {
 #if POPHYPE_GUEST_NET_OPTIMIZE
-		POP_PK("Jack bad - TODO handle it\n");
+		POP_PK("bad - TODO handle it\n");
 #endif
 		err = tcp_sendmsg_fastopen(sk, msg, &copied_syn, size);
 		if (err == -EINPROGRESS && copied_syn > 0)

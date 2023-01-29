@@ -6964,7 +6964,7 @@ int register_netdevice(struct net_device *dev)
 #if POPHYPE_NET_OPTIMIZE
 	if(!strcmp(dev->name, POPHYPE_ORIGIN_TAP_NAME)) {
 		pophype_tap0_at_origin = net;
-		POP_PK("pophype: net: %s(): Jack netdev name \"%s\" net %p\n",
+		POP_PK("pophype: net: %s(): netdev name \"%s\" net %p\n",
 											__func__, dev->name, net);
 	}
 #endif

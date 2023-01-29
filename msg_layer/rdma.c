@@ -574,7 +574,7 @@ struct pcn_kmsg_rdma_handle *rdma_kmsg_pin_rdma_buffer(void *msg, size_t size)
 		return ERR_PTR(-EINVAL);
 	}
 #endif
-	rh->rkey = rdma_mr->rkey; // Jack
+	rh->rkey = rdma_mr->rkey;
 	rh->private = (void *)
 		(unsigned long)__get_rdma_buffer(&rh->addr, &rh->dma_addr);
 

@@ -6257,7 +6257,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 			int pskb_size = a1;
 			/* 1. pass skb from guest to host a0 a1
 			   2. send all to origin */
-			VHOSTNET_OPTIMIZE_PK("got hypercall KVM_HC_POPHYPE_NET_DELEGATE pophypejack Jack - "
+			VHOSTNET_OPTIMIZE_PK("got hypercall KVM_HC_POPHYPE_NET_DELEGATE pophype - "
 								"pskb_gva %p pskb_size %d\n", pskb_gva, pskb_size);
 			BUG_ON(!my_nid);
 			delegate_skb_tx(pskb_gva, pskb_size);
@@ -6268,7 +6268,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 			struct pophype_msghdr __user *pmsghdr = (struct pophype_msghdr *)a0; /* ATTENTION: guest ptr */
 			int pmsghdr_size = (int)a1;
 
-			VHOSTNET_OPTIMIZE_PK("got hypercall KVM_HC_POPHYPE_NET_MSG_DELEGATE pophypejack Jack - "
+			VHOSTNET_OPTIMIZE_PK("got hypercall KVM_HC_POPHYPE_NET_MSG_DELEGATE pophype - "
 								"(usr)pmsghdr %p pmsghdr_size %d\n", pmsghdr, pmsghdr_size);
 			BUG_ON(!my_nid);
 			delegate_net_msg_tx(pmsghdr, pmsghdr_size);

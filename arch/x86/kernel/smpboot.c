@@ -77,7 +77,7 @@
 #include <asm/misc.h>
 
 
-#define DEBUG 1 // Jack
+#define DEBUG 1
 #ifdef CONFIG_POPCORN_HYPE
 #include <popcorn/bundle.h>
 #include <popcorn/debug.h>

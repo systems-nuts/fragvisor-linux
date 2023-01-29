@@ -3448,7 +3448,7 @@ static struct vmcs *alloc_vmcs_cpu(int cpu)
 	vmcs->revision_id = vmcs_config.revision_id; /* vmcs revision id */
 #if defined(CONFIG_POPCORN_HYPE)
 	/* per vcpu */
-	PHMIGRATEPRINTK("%s(): Jack cpu %d\n", __func__, cpu);
+	PHMIGRATEPRINTK("%s(): cpu %d\n", __func__, cpu);
 #endif
 	return vmcs;
 }

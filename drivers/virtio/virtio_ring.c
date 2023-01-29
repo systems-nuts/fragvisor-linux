@@ -798,16 +798,14 @@ struct virtqueue *vring_new_virtqueue(unsigned int index,
 #if !POPHYPE_HOST_KERNEL && defined(CONFIG_POPCORN_HYPE)
 	POP_PK("pophype: net: %s %s(): "
 			"RECV path checks new package - "
-			"Jack [[&vq->last_used_idx %p (guest)]], "
+			"[[&vq->last_used_idx %p (guest)]], "
 			"[[&vq->vring.used->idx %p (host) num for desc[] and ring[] %d "
 			"pages %p vring_align 0x%x\n",
 			__FILE__, __func__,
 			&vq->last_used_idx, &vq->vring.used->idx, num, pages, vring_align);
-	// align = VIRTIO_PCI_VRING_ALIGN
-	// pages = info->queue
 	POP_PK("pophype: net: %s %s(): "
 			"RECV path checks new package - "
-			"Jack [[&vq->vring.avail->idx %p]], "
+			"[[&vq->vring.avail->idx %p]], "
 			"&vq->free_head %p\n",
 			__FILE__, __func__,
 			&vq->vring.avail->idx,

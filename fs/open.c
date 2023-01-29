@@ -1060,7 +1060,7 @@ long do_sys_open_tsk_req(struct task_struct *tsk, int dfd, char *filename, int f
 	return fd;
 }
 
-/* Copy from old code: refactory required!! TODO */
+/* Copy from old code: refactory required!! */
 /*
  *
  * Due to files->count doesn't work, this is mainly built for geting correct number of opened files
@@ -1073,7 +1073,7 @@ int jack_traverse_thread_files(struct task_struct* task, int debug, int load) {
     int i = 0;
 
     if(debug) {
-		POP_PK("Jack: OOOOOOOOOOOOOOOO jack_traverse OOOOOOOOOOOOOOOO\n");
+		POP_PK("OOOOOOOOOOOOOOOO %s OOOOOOOOOOOOOOOO\n", __func__);
 	}
 
 	spin_lock(&task->files->file_lock);
@@ -1179,7 +1179,7 @@ void jack_do_file_migration(struct task_struct* task) {
                 //request->f_pos[loop] = fdt_tmp->fd[loop]->f_pos;
                 //request->f_flags[loop] = fdt_tmp->fd[loop]->f_flags;
                 //request->f_mode[loop] = fdt_tmp->fd[loop]->f_mode;
-                FDPRINTK("Jack: fd[%d] meta loaded in msg\n", loop);
+                FDPRINTK("fd[%d] meta loaded in msg\n", loop);
             }
             else {
                 POP_PK("%s: cur->files->fd[%d] = *****null***** \n", label, loop);
@@ -1196,7 +1196,7 @@ void jack_do_file_migration(struct task_struct* task) {
 							label, jack_traverse_thread_files(task, 0, 0));
         }
         // --- merge to golbal file mapping table --- //
-        POP_PK("Jack: --- all files meta data loaded ---\n");
+        POP_PK("--- all files meta data loaded ---\n");
     } // has file added end
     else if (delta_file_cnt == 0) { // important, remote needs these info
         POP_PK("%s: ------------ not open any new file. delta=%d -------- \n",

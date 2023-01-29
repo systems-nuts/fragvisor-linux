@@ -1120,7 +1120,7 @@ static int vhost_net_open(struct inode *inode, struct file *f)
 #ifdef CONFIG_POPCORN_HYPE // #if POPHYPE_GUEST_NET_OPTIMIZE
 	POP_PK("\t(guest) pophype: vhost-net: opti: <%d> %s: %s(): "
 			"(struct vhost_virtqueue) vqs %p "
-			"[[[[[ Jack vqs[VHOST_NET_VQ_TX] [[[%p]]] (shared) "
+			"[[[[[ vqs[VHOST_NET_VQ_TX] [[[%p]]] (shared) "
 					"vqs[VHOST_NET_VQ_RX] [[[%p]]] (shared) ]]]]]"
 			"(This also explain why there is no MQ in vhost)\n",
 			smp_processor_id(), __FILE__, __func__,
@@ -1182,7 +1182,7 @@ static int vhost_net_enable_vq(struct vhost_net *n,
 	struct socket *sock;
 
 #if POPHYPE_NET_OPTIMIZE
-	POP_PK("%s: %s(): Jack vq->private_data = (struct socket) *sock = %p\n",
+	POP_PK("%s: %s(): vq->private_data = (struct socket) *sock = %p\n",
 										__FILE__, __func__, vq->private_data);
 	WARN_ON("NEVER");
 	pophype_origin_host_tun_sock = vq->private_data;

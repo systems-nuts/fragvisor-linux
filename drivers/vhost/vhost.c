@@ -428,7 +428,7 @@ void vhost_dev_init(struct vhost_dev *dev,
 #endif
 #if POPHYPE_NET_OPTIMIZE
 			POP_PK("\t(kernel) pophype: vhost-net: %s: %s(): "
-					"Jack (shared)vq va %p pa 0x%llx #%d/%d\n",
+					"(shared)vq va %p pa 0x%llx #%d/%d\n",
 					__FILE__, __func__, vq, virt_to_phys(vq), i, dev->nvqs);
 #endif
 			vhost_poll_init(&vq->poll, vq->handle_kick,
@@ -800,7 +800,7 @@ static long vhost_set_memory(struct vhost_dev *d, struct vhost_memory __user *m)
 	}
 	kvfree(oldmem);
 #if POPHYPE_NET_OPTIMIZE
-	POP_PK("pophype: %s %s(): [[[vhost]]] Jack "
+	POP_PK("pophype: %s %s(): [[[vhost]]] "
 			"newmem->regions[0] .guest_phys_addr 0x%llx .memory_size 0x%llx "
 			".userspace_addr 0x%llx .flags_padding 0x%llx\n",
 			__FILE__, __func__, newmem->regions[0].guest_phys_addr,
@@ -916,7 +916,7 @@ long vhost_vring_ioctl(struct vhost_dev *d, int ioctl, void __user *argp)
 			static u64 cnt = 0;
 			cnt++;
 			POP_PK("\t(kernel) pophype: vhost-net: %s: %s(): "
-					"VHOST_SET_VRING_ADDR Jack "
+					"VHOST_SET_VRING_ADDR "
 					"a.desc_user_addr 0x%llx "
 					"a.used_user_addr 0x%llx "
 					"a.avail_user_addr 0x%llx "

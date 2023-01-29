@@ -233,7 +233,7 @@ int anon_inode_getfd_tsk(struct task_struct *tsk, const char *name, const struct
 		return error;
 	fd = error;
 
-	HPPRINTK("%s(): Jack - TODO check moredetails\n", __func__);
+	HPPRINTK("%s(): check moredetails\n", __func__);
 	file = anon_inode_getfile(name, fops, priv, flags);
 	if (IS_ERR(file)) {
 		error = PTR_ERR(file);

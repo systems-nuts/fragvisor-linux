@@ -57,13 +57,11 @@
 #include <linux/file.h>
 #include <linux/delay.h>
 
-#include "../arch/x86/kvm/lapic.h" // Jack arch
-#include "../arch/x86/kvm/x86.h" // Jack arch
+#include "../arch/x86/kvm/lapic.h"
+#include "../arch/x86/kvm/x86.h"
 #include <linux/smpboot.h>
 
 #include <linux/syscalls.h>
-
-//#include <linux/skbuff.h> // vhost-net optimication
 
 #include <linux/netdevice.h> // pophype - net optimize
 #include <linux/virtio_net.h>
@@ -608,35 +606,9 @@ int pophype_available_vcpu(void)
  * Debug utils
  *******************************/
 /* Call this function in hypervisor only (NOT USEFUL printk works already) */
-//#define MAX_NID 8
 #include <linux/fdtable.h>
-//extern int sys_close(unsigned int fd);
-//#define LEN 255
 int popcorn_get_hnid(void)
 {
-#if 0
-    int i, fd, flags = O_RDONLY;
-	char init_echo_name[] = "/jack_echo"; // TODO fox
-	char path[LEN];
-
-	//for (i = 0; i <= MAX_POPCORN_NODES; i++) {
-	for (i = 4; i <= 5; i++) {
-		int ofs = 0;
-		memset(path, 0, LEN);
-		ofs += snprintf(path, LEN,
-				//(sizeof(init_echo_name) - 0) * sizeof(*init_echo_name),
-													"%s", init_echo_name);
-		//ofs += snprintf(path + ofs, sizeof(char), "%d", i);
-		ofs += snprintf(path + ofs, LEN, "%d", i);
-		printk("try open \"%s\" size %lu ofs %d\n", path,
-			(sizeof(init_echo_name) - 0) * sizeof(*init_echo_name), ofs);
-		fd = do_sys_open(AT_FDCWD , path, flags, 0);
-		if (fd >= 0) {
-			sys_close(fd);
-			return i;
-		}
-	}
-#endif
 	return -1;
 }
 
@@ -1701,9 +1673,6 @@ SYSCALL_DEFINE1(pophype_vcpu_migrate_trigger, int __user, vcpu_id)
 	{
 //#include <kvm/iodev.h>
 //#include <kvm/ioapic.h>
-//#include "../arch/x86/kvm/ioapic.h" // Jack arch
-//#include "../arch/x86/kvm/irq_comm.c" // Jack arch
-#include "../arch/x86/kvm/irq.h" // Jack arch
 //#include <asm/kvm_host.h>
 //#include <linux/kvm_host.h>
 //#include <linux/kvm_host.h>
@@ -2770,9 +2739,9 @@ int popcorn_update_remote_vcpu(int dst_nid, int dst_vcpu)
 		memcpy(&req->msrs, msrs, sizeof(*msrs));
 		PHMIGRATEPRINTK("\t\t*msrs check size %d in req %d\n", msrs->nmsrs, req->msrs.nmsrs);
 
-		PHMIGRATEPRINTK("Jack rip ret %llx req %llx\n", regs->rip, req->regs.rip);
-		PHMIGRATEPRINTK("Jack cr0 ret %llx req %llx\n", sregs->cr0, req->sregs.cr0);
-		PHMIGRATEPRINTK("Jack cr3 ret %llx req %llx\n", sregs->cr3, req->sregs.cr3);
+		PHMIGRATEPRINTK("rip ret %llx req %llx\n", regs->rip, req->regs.rip);
+		PHMIGRATEPRINTK("cr0 ret %llx req %llx\n", sregs->cr0, req->sregs.cr0);
+		PHMIGRATEPRINTK("cr3 ret %llx req %llx\n", sregs->cr3, req->sregs.cr3);
 
 
 		PHMIGRATEPRINTK("DON'T GET STATES HERE (WRONG STATES). "
@@ -4181,7 +4150,7 @@ static void fake_parameters(struct sk_buff *skb)
 	VHOSTNET_OPTIMIZE_PK("\t\t[*] %s(): replace with origin host dev \"%s\"\n",
 													__func__, skb->dev->name);
 
-	/* Jack: this is for sync ack? */
+	/* This is for sync ack? */
 	inet = inet_sk(skb->sk);
 //	printk("!skip ip_hdr - inet %p\n", inet);
 	if (inet) {
@@ -4256,7 +4225,7 @@ static void fake_parameters(struct sk_buff *skb)
 		}
 
         if(msg_changed) {
-			POP_PK("pophype: Jack need your ATTENTION skb->sk %p\n", skb->sk);
+			POP_PK("pophype: Need your ATTENTION skb->sk %p\n", skb->sk);
 			tcp_v4_send_check(skb->sk, skb);
 			ip_send_check(network_header);
              //tcp_v4_send_check(filter->ft_sock, skb);
@@ -4282,7 +4251,7 @@ static struct sk_buff* create_skb_from_pskb(struct pophype_skb *pskb)
 	skb = dev_alloc_skb(pskb->datalen + pskb->headerlen + pskb->taillen);
     BUG_ON(!skb);
 
-//	printk("%s(): Jack skb->csum_start %d ->data %lu ->head %lu (%lu) "
+//	printk("%s(): skb->csum_start %d ->data %lu ->head %lu (%lu) "
 //			"skb->_skb_refdst %lu\n",
 //					__func__, skb->csum_start,
 //					(unsigned long)skb->data, (unsigned long)skb->head,

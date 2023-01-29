@@ -3912,7 +3912,7 @@ pophype_retry:
             atomic64_inc(&kvm_eptreinv_cnt);
 #endif
             spin_unlock(&vcpu->kvm->mmu_lock);
-            kvm_release_pfn_clean(pfn); // 0412 test EPT_RETRY_VM_OPTIMIZE // kh_jack didn't do it
+            kvm_release_pfn_clean(pfn);
             goto pophype_retry;
         }
 #endif

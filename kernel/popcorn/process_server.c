@@ -850,7 +850,7 @@ static int remote_worker_main(void *data)
 		int nid;
 		for (nid = 1; nid < get_popcorn_nodes() && nid < my_nid; nid++) {
 			/* how can I be sure remote has created the worker thread. */
-			POP_PK("%s() JACK ASK [%d(/%d)] for tgid\n",
+			POP_PK("%s(): ASK [%d(/%d)] for tgid\n",
 				__func__, nid, get_popcorn_nodes() - 1);
 			popcorn_ask_remote_tgid(nid, rc);
 		}

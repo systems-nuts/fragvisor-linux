@@ -2816,7 +2816,7 @@ static int __do_fault(struct vm_area_struct *vma, unsigned long address,
 #ifdef CONFIG_POPCORN_STAT
     if (distributed_process(current) &&
 		(address == 0x7ffff4fdd000 || INTERESTED_GVA(address))) {
-        EPTPRINTK("%s(): jack %p %p local file fault "
+        EPTPRINTK("%s(): %p %p local file fault "
                 "(I think we didn't have DSM working for this resion "
                 "so this is the problem)\n",
                 __func__, vma->vm_ops, vma->vm_ops->fault);
@@ -3177,7 +3177,7 @@ static int do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 #ifdef CONFIG_POPCORN_HYPE
 	if (distributed_process(current) &&
 		(address == 0x7ffff4fdd000 || INTERESTED_GVA(address))) {
-		POP_PK("%s(): localfault jack %p %p "
+		POP_PK("%s(): localfault %p %p "
 				"(I think we didn't have DSM working for this resion "
 				"so this is the problem)\n",
 				__func__, vma->vm_ops, vma->vm_ops->fault);
@@ -3387,8 +3387,8 @@ static int handle_pte_fault(struct mm_struct *mm,
 				/* TODO 0527 If this is the problem seperate fault from EPT or local PTE */
 				/* TODO 0527 If this is the problem seperate fault from EPT or local PTE */
 				if (current->at_remote) {
-					//udelay(backoff * 5000); /* Jack good */
-					//udelay(backoff * 1000); /* Jack works */
+					//udelay(backoff * 5000); /* good */
+					//udelay(backoff * 1000); /* works */
 					//udelay(backoff * 100); // AP X 20s O 30s takes forever to boot
 					//msleep(backoff * 10); //
 					//udelay(backoff * 1000); // testing
@@ -3606,7 +3606,7 @@ static int handle_pte_fault(struct mm_struct *mm,
 						current->pid, address, current->backoff_weight);
 				}
 #endif
-				return do_fault(mm, vma, address, pte, pmd, // Jack looking at
+				return do_fault(mm, vma, address, pte, pmd,
 						flags, entry);
 			}
 		}

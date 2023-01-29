@@ -3074,8 +3074,6 @@ extern bool path_noexec(const struct path *path);
 extern void inode_nohighmem(struct inode *inode);
 
 /* FD migration is not considered in Pophype but it's needed in Pophype */
-//#ifdef CONFIG_POPCORN_HYPE
-//extern long jack_open(int dfd, const char *filename, int flags, umode_t mode, loff_t pos, struct task_struct* task);
 extern int jack_traverse_thread_files(struct task_struct* task, int debug, int load);
 extern void jack_do_file_migration(struct task_struct* task);
 

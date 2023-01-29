@@ -1672,7 +1672,6 @@ static pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool *async,
 					current->mm->mmap_sem.count,
 					cnt, cnt >= RETRY_LOCALFAULT ? "***FALLBACK***" : "");
 
-			/* Jack's modification */
 			if (cnt >= RETRY_LOCALFAULT) {
 				if (async) {
 					*async = false;

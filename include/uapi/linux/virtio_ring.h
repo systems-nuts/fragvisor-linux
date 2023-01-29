@@ -166,18 +166,14 @@ static inline void vring_init(struct vring *vr, unsigned int num, void *p,
 	vr->num = num;
 	vr->desc = p;
 	vr->avail = p + num*sizeof(struct vring_desc);
-//#if defined(CONFIG_POPCORN_HYPE) && !POPHYPE_HOST_KERNEL && POPHYPE_NET_OPTIMIZE
 #if POPHYPE_GUEST_NET_OPTIMIZE
 	/* Also check vring_size */
-	//vr->used = (void *)(((uintptr_t)&vr->avail->ring[num] + sizeof(__virtio16) + (sizeof(char) * 4092) // when avail padding ON
 	vr->used = (void *)(((uintptr_t)&vr->avail->ring[num] + sizeof(__virtio16)
 		+ align-1) & ~(align - 1));
 
-	POP_PK("pophype: net: %s %s(): [Jack] vr->used %p vr->avail %p "
+	POP_PK("pophype: net: %s %s(): vr->used %p vr->avail %p "
 			"vring %p num %u *p %p align 0x%lx\n", // looks like cannot printk here?
 			__FILE__, __func__, vr->used, vr->avail, vr, num, p, align);
-    // align = VIRTIO_PCI_VRING_ALIGN
-	// pages = info->queue (info=virtio_pci_vq_info)
 #else
 	vr->used = (void *)(((uintptr_t)&vr->avail->ring[num] + sizeof(__virtio16)
 		+ align-1) & ~(align - 1));
@@ -186,9 +182,8 @@ static inline void vring_init(struct vring *vr, unsigned int num, void *p,
 
 static inline unsigned vring_size(unsigned int num, unsigned long align)
 {
-//#if defined(CONFIG_POPCORN_HYPE) && !POPHYPE_HOST_KERNEL && POPHYPE_NET_OPTIMIZE
 #if POPHYPE_GUEST_NET_OPTIMIZE
-	printk("%s(): [Jack] original %lu pophype %lu\n",
+	printk("%s(): original %lu pophype %lu\n",
 			__func__,
 			((sizeof(struct vring_desc) * num + sizeof(__virtio16) * (3 + num)
 			 + align - 1) & ~(align - 1))
