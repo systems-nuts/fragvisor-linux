@@ -1392,31 +1392,19 @@ static void dbg_restore_debug_regs(void)
 #endif /* ! CONFIG_KGDB */
 
 #ifdef CONFIG_POPCORN_HYPE
-//static void msleep_at_ap(int mins)
-//{
-//	int i, j,k, loop1 = 100, loop2 = 100000000;
-//	POP_PK(KERN_INFO "\t\t[%d] (sleep %d * 60s...)\n",
-//					current ? current->pid : -1, mins);
-//	for (k = 0; k < mins; k++)
-//		for (i = 0; i < loop1; i++)
-//			for (j = 0; j < loop2; j++)
-//				cpu_relax();
-//
-//}
-
-//extern bool **hype_callin;
 extern bool **hype_callin_dynamic_alloc;
 #endif
 static void wait_for_master_cpu(int cpu)
 {
 #ifdef CONFIG_SMP
 #ifdef CONFIG_POPCORN_HYPE
+#if !POPHYPE_HOST_KERNEL
 	int cnt = 0;
+#endif
 	bool first = true;
 	/* For testing 2nd stack push !!! */
 	if (cpu > 0) {
 		if (&hype_callin_dynamic_alloc[HYPE_DEBUG_POINT2][cpu]) {
-			//hype_callin[HYPE_DEBUG_POINT2][1] = true;
 			hype_callin_dynamic_alloc[HYPE_DEBUG_POINT2][cpu] = true;
 		} else {
 			POP_PK("\n\n\t\t%s: THIS IS NOT WORKING [%d][%d]!!!\n\n\n",
@@ -1430,8 +1418,6 @@ static void wait_for_master_cpu(int cpu)
 	 * with AP initialization
 	 */
 #ifdef CONFIG_POPCORN_HYPE
-//	POP_PK(KERN_INFO "\t%s: AP<%d> waits BSP[*] for letting AP to "
-//				"start cpu_init() (AP stack working)\n", __func__, cpu);
 	WARN_ON(cpumask_test_and_set_cpu(cpu, cpu_initialized_mask));
 	/* WARN 1: has set 0: good (return old bit 0/1) */
 
@@ -1449,32 +1435,14 @@ static void wait_for_master_cpu(int cpu)
 
 	while (!cpumask_test_cpu(cpu, cpu_callout_mask)) {
 #ifdef CONFIG_POPCORN_HYPE
-		//int i, j, loop = 1000000, loop2 = 1;
 		if (first)
 			first = false;
 
 #if POPHYPE_HOST_KERNEL
 		cpu_relax();
 #else
-		/* (TODO delete) Don't delete these yet because
-			once you turn printk on, you might need these buffers
-		 *********************************************************/
-		/* If not cpu_relax, too many faults, stuck. no even 1 hype_callin[] */
-		//for (i = 0; i < loop; i++)
-		//	for (j = 0; j < loop2; j++)
-				cpu_relax();
-
+		cpu_relax();
 		cnt++;
-		//printk("\t#%d/(INF) <%d> %d\n",
-		//		cnt, cpu, cpumask_test_cpu(cpu, cpu_callout_mask));
-//		if (cnt > 1000) {
-////			printk("\t#%d(FINAL) <%d> %d DEAD...\n",
-////					cnt, cpu, cpumask_test_cpu(cpu, cpu_callout_mask));
-////			BUG();
-//		} else if (!(cnt % 100)) {
-////			printk("\t#%d/(INF) <%d> %d\n",
-////					cnt, cpu, cpumask_test_cpu(cpu, cpu_callout_mask));
-//		}
 #endif
 
 #else
@@ -1483,47 +1451,15 @@ static void wait_for_master_cpu(int cpu)
 	}
 
 #ifdef CONFIG_POPCORN_HYPE
+#if !POPHYPE_HOST_KERNEL
 	POP_PK("\tpophype: smp: #%d(FINAL) <%d> %d DONE GO HOME GO HOME GO HOME !!!\n",
 				cnt, cpu, cpumask_test_cpu(cpu, cpu_callout_mask));
-
-
-//#if !POPHYPE_HOST_KERNEL /* uncomment this to make sure guesOS will run fine */
-	if (cpu > 0) { /* hopefully this will give printf time to appear */ //100000
-		/* start_secondary -> smp_callin() */
-		//set_cpu_sibling_map(raw_smp_processor_id());
-		//wmb(); // ???
-
-		//hype_callin[HYPE_DEBUG_POINT4][1] = true;
-		hype_callin_dynamic_alloc[HYPE_DEBUG_POINT4][cpu] = true; // handshake done
-		//cpu_sleep_almost_forever(cpu);
-
-		// Jack's hacking for passing host vanilla boot
-		/* start_secondary -> smp_callin() -> cpumask_set_cpu(cpuid, cpu_callin_mask) (in the end of smp_callin()) */
-		//cpumask_set_cpu(cpu, cpu_callin_mask); /* not sure */
-		// TODO WROKING - don't trick now for both cpu_callin_mask and cpu_online
-		/* THIS MAKES BSP see2 or the next */
-
-
-		/* start_secondary */
-		//smp_mb();
-		//printk("\tHACK: set_cpu_online(<%d>). This hack "
-		//	"will confuse secheduler!!!!! in the end of smp initialization "
-		//	"(if no hack, BSP cannot see the  2nd cpu now and the 2nd AP somehow reaches idle)\n", cpu);
-		//set_cpu_online(smp_processor_id(), true);
-
-		/* if this pass meaning that 2nd init code will crash kernel (GOOD)
-			- next sync point is
-			!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-			bsp() check_tsc_sync_source()
-			ap check_tsc_sync_target()
-			!!!!!!!!!!!!!!!!!!!!!!!!!!!
-			and then something, and scheduler
-		*/
-	}
-//#endif
 #endif
-
-
+	if (cpu > 0) {
+		/* start_secondary -> smp_callin() - handshake done */
+		hype_callin_dynamic_alloc[HYPE_DEBUG_POINT4][cpu] = true;
+	}
+#endif
 
 #endif
 }
@@ -1555,7 +1491,6 @@ void cpu_init(void)
 	SMPPRINTK("%s(): WATCHING <%d>\n", __func__, cpu);
 #endif
 #ifdef CONFIG_POPCORN_HYPE
-	//POP_PK(KERN_INFO "\t%s: AP<%d> stack push working\n", __func__, cpu);
 	if (cpu > 0) {
 		/* If w/o checking this, somehow KERNEL PANIC W/ NO ANT DMESG AT ALL!!! */
 		if (&hype_callin_dynamic_alloc[HYPE_DEBUG_POINT1][cpu]) {
@@ -1567,10 +1502,7 @@ void cpu_init(void)
 #endif
 	wait_for_master_cpu(cpu);
 #ifdef CONFIG_POPCORN_HYPE
-	//POP_PK(KERN_INFO "\t%s: AP<%d> stack pop working got signal from BSP[*]\n",
-	//															__func__, cpu);
 	if (cpu > 0) {
-		//hype_callin[HYPE_DEBUG_POINT5][1] = true;
 		hype_callin_dynamic_alloc[HYPE_DEBUG_POINT5][cpu] = true;
 	}
 #endif
@@ -1619,11 +1551,7 @@ void cpu_init(void)
 	me = current;
 
 #ifdef CONFIG_POPCORN_HYPE
-//#if !POPHYPE_HOST_KERNEL
-//	/* no printk for guest */
-//#else
 	pr_debug("Initializing CPU#%d\n", cpu);
-//#endif
 #else
 	pr_debug("Initializing CPU#%d\n", cpu);
 #endif
@@ -1714,16 +1642,7 @@ void cpu_init(void)
 
 	show_ucode_info_early();
 
-#ifdef CONFIG_POPCORN_HYPE
-//#if !POPHYPE_HOST_KERNEL
-//	/* guest don't printk */
-//	printk(KERN_INFO "Initializing CPU#%d\n", cpu);
-//#else
 	POP_PK(KERN_INFO "Initializing CPU#%d\n", cpu);
-//#endif
-#else
-	POP_PK(KERN_INFO "Initializing CPU#%d\n", cpu);
-#endif
 
 	if (cpu_feature_enabled(X86_FEATURE_VME) || cpu_has_tsc || cpu_has_de)
 		cr4_clear_bits(X86_CR4_VME|X86_CR4_PVI|X86_CR4_TSD|X86_CR4_DE);
