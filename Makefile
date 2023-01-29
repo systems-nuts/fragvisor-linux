@@ -624,6 +624,11 @@ KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-truncation)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, int-in-bool-context)
+# Fragvisor
+KBUILD_CFLAGS += $(call cc-disable-warning, attribute-alias) # for newer gcc (8)
+KBUILD_CFLAGS += $(call cc-disable-warning, stringop-truncation) # for newer gcc (8)
+KBUILD_CFLAGS += $(call cc-disable-warning, packed-not-aligned) # for newer gcc (8)
+KBUILD_CFLAGS += $(call cc-disable-warning, sizeof-pointer-memaccess) # for newer gcc (8)
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os
