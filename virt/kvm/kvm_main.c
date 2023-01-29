@@ -61,16 +61,11 @@
 #include "vfio.h"
 
 #ifdef CONFIG_POPCORN_HYPE
-//#include <popcorn/hype.h>
 #include <popcorn/hype_kvm.h>
 #include <popcorn/debug.h>
-#define RETRY_LOCALFAULT_MOD 4 // appear 4 times
+#define RETRY_LOCALFAULT_MOD 4
 #define RETRY_LOCALFAULT 100
-//#define RETRY_LOCALFAULT 10000
-//#define RETRY_LOCALFAULT 10000000 //good
-//#define RETRY_LOCALFAULT 100000000 // supper enough time
 #include <linux/delay.h>
-//#include "../../kernel/popcorn/trace_events.h"
 #endif
 
 #define CREATE_TRACE_POINTS
@@ -79,7 +74,7 @@
 MODULE_AUTHOR("Qumranet");
 MODULE_LICENSE("GPL");
 
-/* Architectures should define their poll value according to the halt latency */
+/* Architectures should define their poll value according to the halt latency. */
 static unsigned int halt_poll_ns = KVM_HALT_POLL_NS_DEFAULT;
 module_param(halt_poll_ns, uint, S_IRUGO | S_IWUSR);
 
@@ -87,14 +82,13 @@ module_param(halt_poll_ns, uint, S_IRUGO | S_IWUSR);
 static unsigned int halt_poll_ns_grow = 2;
 module_param(halt_poll_ns_grow, int, S_IRUGO);
 
-/* Default resets per-vcpu halt_poll_ns . */
+/* Default resets per-vcpu halt_poll_ns. */
 static unsigned int halt_poll_ns_shrink;
 module_param(halt_poll_ns_shrink, int, S_IRUGO);
 
 /*
  * Ordering of locks:
- *
- *	kvm->lock --> kvm->slots_lock --> kvm->irq_lock
+ *		kvm->lock --> kvm->slots_lock --> kvm->irq_lock
  */
 
 DEFINE_SPINLOCK(kvm_lock);
@@ -296,11 +290,6 @@ static void kvm_mmu_notifier_invalidate_page(struct mmu_notifier *mn,
 {
 	struct kvm *kvm = mmu_notifier_to_kvm(mn);
 	int need_tlb_flush, idx;
-#if defined(CONFIG_POPCORN_HYPE) && defined(CONFIG_POPCORN_STAT)
-	/* USED: DSM pg fault ->
-		__mmu_notifier_invalidate_page -> kvm_mmu_notifier_invalidate_page */
-	//trace_kvm_ept_inv(address);
-#endif
 
 	/*
 	 * When ->invalidate_page runs, the linux pte has been zapped
@@ -1093,19 +1082,6 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	kvm_free_memslot(kvm, &old, &new);
 	kvfree(old_memslots);
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* From 1. KVM_SET_TSS_ADDR -> vmx_set_tss_addr -> __x86_set_memory_region
-			2. KVM_SET_USER_MEMORY_REGION
-			3. KVM_CREATE_VCPU					(ordered) */
-	DDPRINTK("%s(): as_id %d base_gfn[%d(usr)/%d] "
-					"base %llx pgs %lx uaddr %lx\n",
-					__func__, as_id, new.id, slots->used_slots - 1, //mem->slot
-					new.base_gfn,
-					new.npages,
-					new.userspace_addr);
-	//if (current->at_remote) { dump_stack(); }
-#endif
-
 	/*
 	 * IOMMU mapping:  New slots need to be mapped.  Old slots need to be
 	 * un-mapped and re-mapped if their base changes.  Since base change
@@ -1332,9 +1308,6 @@ unsigned long kvm_host_page_size(struct kvm *kvm, gfn_t gfn)
 	size = vma_kernel_pagesize(vma);
 
 out:
-#ifdef CONFIG_POPCORN_HYPE
-	; /* TODO 0523 */
-#endif
 	up_read(&current->mm->mmap_sem);
 	return size;
 }
@@ -1347,93 +1320,33 @@ static bool memslot_is_readonly(struct kvm_memory_slot *slot)
 static unsigned long __gfn_to_hva_many(struct kvm_memory_slot *slot, gfn_t gfn,
 				       gfn_t *nr_pages, bool write)
 {
-#ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_STAT
-	// even 0x1a0c many forever.........
-	//if (gfn == 0x99 || (gfn == 0x1a0c)) {
-	if (gfn == 0x99) {
-		POP_PK("%s(): [%d] <%s> - gfn %llx 0 REMOTE DIES HERE "
-				"(cannot pass this check) [[[[slot %p]]] slot->flags %x\n",
-				__func__, current->pid, "?", gfn, slot,slot?slot->flags:0);
-	}
-#endif
-#endif
 
 	if (!slot || slot->flags & KVM_MEMSLOT_INVALID)
 		return KVM_HVA_ERR_BAD;
-#ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_STAT
-	if (gfn == 0x99) {
-		POP_PK("%s(): [%d] <%s> gfn %llx - 1\n", __func__, current->pid, "?", gfn);
-	}
-#endif
-#endif
 	if (memslot_is_readonly(slot) && write)
 		return KVM_HVA_ERR_RO_BAD;
 
 	if (nr_pages)
 		*nr_pages = slot->npages - (gfn - slot->base_gfn);
 
-#ifdef CONFIG_POPCORN_HYPE
-#ifdef CONFIG_POPCORN_STAT
-	if (gfn == 0x99) {
-		POP_PK("%s(): [%d] <%s> nr_pages(dec) %lld slot %p || hva [[[%llx]]] = "
-					"->userspace_addr %lx + (gfn %llx ->base_gfn %llx) * %lu\n",
-					__func__, current->pid, "?",
-					nr_pages ? *nr_pages : -1, slot,
-					slot ? slot->userspace_addr +
-						(gfn - slot->base_gfn) * PAGE_SIZE : -1,
-					slot ? slot->userspace_addr : -1,
-					gfn, slot ? slot->base_gfn : -1, PAGE_SIZE);
-	}
-#endif
-#endif
 	return __gfn_to_hva_memslot(slot, gfn);
 }
 
 unsigned long gfn_to_hva_many_pub(struct kvm_memory_slot *slot, gfn_t gfn,
 				       gfn_t *nr_pages, bool write)
 {
-#ifdef CONFIG_POPCORN_HYPE
-	// even 0x1a0c many forever.........
-	//if (gfn == 0x99 || (gfn == 0x1a0c)) {
-	if (gfn == 0x99) {
-		POP_PK("%s(): [%d] <%s> - gfn %llx 0 REMOTE DIES HERE "
-				"(cannot pass this check) [[[[slot %p]]] slot->flags %x\n",
-				__func__, current->pid, "?", gfn, slot,slot?slot->flags:0);
-	}
-#endif
-
 	if (!slot || slot->flags & KVM_MEMSLOT_INVALID)
 		return KVM_HVA_ERR_BAD;
-#ifdef CONFIG_POPCORN_HYPE
-	if (gfn == 0x99) {
-		POP_PK("%s(): [%d] <%s> gfn %llx - 1\n", __func__, current->pid, "?", gfn);
-	}
-#endif
 	if (memslot_is_readonly(slot) && write)
 		return KVM_HVA_ERR_RO_BAD;
 
 	if (nr_pages)
 		*nr_pages = slot->npages - (gfn - slot->base_gfn);
 
-#ifdef CONFIG_POPCORN_HYPE
-	if (gfn == 0x99) {
-		POP_PK("%s(): [%d] <%s> nr_pages(dec) %lld slot %p || hva [[[%llx]]] = "
-					"->userspace_addr %lx + (gfn %llx ->base_gfn %llx) * %lu\n",
-					__func__, current->pid, "?",
-					nr_pages ? *nr_pages : -1, slot,
-					slot ? slot->userspace_addr +
-						(gfn - slot->base_gfn) * PAGE_SIZE : -1,
-					slot ? slot->userspace_addr : -1,
-					gfn, slot ? slot->base_gfn : -1, PAGE_SIZE);
-	}
-#endif
 	return __gfn_to_hva_memslot(slot, gfn);
 }
-//EXPORT_SYMBOL_GPL(gfn_to_hva_many_pub);
 
-#ifdef CONFIG_POPCORN_HYPE /* debug */
+#ifdef CONFIG_POPCORN_HYPE
 unsigned long pop_gfn_to_hva_many(struct kvm_memory_slot *slot, gfn_t gfn,
 				       gfn_t *nr_pages, bool write)
 {
@@ -1509,8 +1422,8 @@ static int get_user_page_nowait(struct task_struct *tsk, struct mm_struct *mm,
 	int flags = FOLL_TOUCH | FOLL_NOWAIT | FOLL_HWPOISON | FOLL_GET;
 	/* special flag for gup */
 #ifdef CONFIG_POPCORN_HYPE
-	flags = FOLL_TOUCH | FOLL_HWPOISON | FOLL_GET;
 	/* FOLL_NOWAIT will return immediately */
+	flags = FOLL_TOUCH | FOLL_HWPOISON | FOLL_GET;
 #endif
 
 	if (write)
@@ -1549,26 +1462,16 @@ static bool hva_to_pfn_fast(unsigned long addr, bool atomic, bool *async,
 	if (!(write_fault || writable))
 		return false;
 
-	/* pophype - all except write_fault = 0 (R fault) + !writable (not a ptr) */
 #ifdef CONFIG_POPCORN_HYPE
-	// -> __get_user_pages_fast():arch/x86/mm/gup.c
+	/* pophype - all except write_fault = 0 (R fault) + !writable (not a ptr) */
 #endif
 	npages = __get_user_pages_fast(addr, 1, 1, page);
 	if (npages == 1) {
 		*pfn = page_to_pfn(page[0]);
 
-		// pophype dbg - count it
 		if (writable)
 			*writable = true;
 
-#ifdef CONFIG_POPCORN_HYPE
-		if ((distributed_process(current) &&
-			(current->at_remote || INTERESTED_GVA(addr))) &&
-			NOTINTERESTED_GVA(addr)) {
-			EPTVPRINTK("\t\t=fast: [%d] DONE %lx (!lock)\n",
-											current->pid, addr);
-		}
-#endif
 		return true;
 	}
 
@@ -1586,7 +1489,6 @@ static int hva_to_pfn_slow(unsigned long addr, bool *async, bool write_fault,
 	int npages = 0;
 #ifdef CONFIG_POPCORN_HYPE
 	unsigned long try_lock_cnt = 0; /* try_lock */
-	unsigned long retry_cnt = 0;
 	if (distributed_process(current) && !writable) {
 		EPTVPRINTK("\t\t=slow: [%d] %lx not from eptfault but gfn_to_pfn()\n",
 									current->pid, addr);
@@ -1598,33 +1500,7 @@ static int hva_to_pfn_slow(unsigned long addr, bool *async, bool write_fault,
 	if (writable)
 		*writable = write_fault;
 
-#ifdef CONFIG_POPCORN_HYPE
-#if 0
-	//if ((current->at_remote && !async) ||
-	if ((INTERESTED_GVA(addr) && !async)) {
-		EPTVPRINTK("\t\t=slow: [%d] XXXXX !async(since it's 2nd try) addr %lx\n",
-					current->pid, addr);
-		//dump_stack();
-	}
-#endif
-#endif
-
 	if (async) {
-//#if 0
-		//npages = __get_user_pages_unlocked(current, current->mm, addr, 1,
-		//				   write_fault, 0, page,
-		//				   FOLL_TOUCH|FOLL_HWPOISON); /* !forece */
-//#else
-retry:
-#ifdef CONFIG_POPCORN_HYPE
-		if ((current->at_remote || INTERESTED_GVA(addr)) &&
-			 NOTINTERESTED_GVA(addr)
-			 ) {
-			EPTVVPRINTK("\t\t=slow: [%d] before LOCK %lx\n",
-									current->pid, addr);
-		}
-#endif
-
 #ifdef CONFIG_POPCORN_HYPE
 		while (!down_read_trylock(&current->mm->mmap_sem)) {
 			if ((!(try_lock_cnt % (RETRY_LOCALFAULT / RETRY_LOCALFAULT_MOD))) &&
@@ -1639,17 +1515,8 @@ retry:
 						try_lock_cnt,
 						try_lock_cnt >= RETRY_LOCALFAULT ?
 									"***FALLBACK***" : "");
-
-				/* Retry is not used becaus
-				 * get_user_page_nowait must return 1 pg */
-#if 0
-				if (try_lock_cnt >= RETRY_LOCALFAULT) {
-					*pfn = REMOTE_CANNOT_DOWN_MMAP_SEM;
-					/* ret=npages=!1, do botton-half =afslow */
-					return REMOTE_CANNOT_DOWN_MMAP_SEM;
-					//BUG();
-				}
-#endif
+				/* Retry is not used because
+				 * 	get_user_page_nowait must return 1 pg */
 			}
 			try_lock_cnt++;
 			io_schedule();
@@ -1669,54 +1536,10 @@ retry:
 		npages = get_user_page_nowait(current, current->mm,
 					      addr, write_fault, page);
 		up_read(&current->mm->mmap_sem);
-
-#ifdef CONFIG_POPCORN_HYPE
-		if (distributed_process(current)) {
-			if ((current->at_remote ||
-				//(((addr >> PAGE_SHIFT) & PAGE_MASK) > 0x1a00 &&
-				 //((addr >> PAGE_SHIFT) & PAGE_MASK) < 0x1aff) ||
-				 INTERESTED_GVA(addr)) &&
-				 NOTINTERESTED_GVA(addr)
-				 ) {
-				EPTVVPRINTK("\t\t=slow: [%d] [[[UNLOCKed]]] %lx retpg %s%d%s "
-									"atomic %s #%lu\n",
-									current->pid, addr,
-									npages != 1 ? "*****" : "",
-									npages,
-									npages != 1 ? "***** Jack !RETRY" : "",
-									in_atomic() ? "O" : "X", retry_cnt);
-			}
-		}
-
-#ifdef CONFIG_POPCORN_CHECK_SANITY
-		/* Retry is not used becaus
-		 * get_user_page_nowait must return 1 pg */
-		/* I made/hope get_user_page_nowait() must successful -
-			So RETRY_FIRST_EPT is not nessary........
-			but this is not ture...... (why??? so far stable)
-			BUG BUG BUG */
-		/* Jack: popcorn_hype retry dsm failure */
-		if (RETRY_FIRST_EPT) {
-			/* hacking/fixing for RETRY CASE -
-				THIS IS BAD. HERE IS NOT THE PLACE FOR SWAP
-				meaning failure is fine */
-			if (npages != 1) { // TODO assumming RETY != 1 which is not 100% true
-				printk(KERN_ERR "[SYSTEM CORRUPTED] !![%d] I don't think this should happen, I thought "
-						"get_user_page_nowait MUST return 1 pg, npages %d\n",
-						current->pid, npages);
-				BUG_ON(npages < 0 && "system corrupted");
-				//schedule();
-				retry_cnt++;
-				goto retry;
-				/* old BUG: retry never get down_read() lock
-					meanwhile origin is asking for the same page */
-			}
-		}
-#endif
-#endif
-//#endif
-	} else { /* 2nd __gfn_to_pfn_memslot() (aka hva_to_pfn())  or !!gfn_to_page(1st remote #ept )!!!  */
-		/* Have to handle this as well */
+	} else {
+		/* 2nd __gfn_to_pfn_memslot() (aka hva_to_pfn()) or
+		 * 								!!gfn_to_page(1st remote #ept )!!!
+		 */
 		npages = __get_user_pages_unlocked(current, current->mm, addr, 1,
 					   write_fault, 0, page,
 					   FOLL_TOUCH|FOLL_HWPOISON); /* lkvm interested forece=0 */
@@ -1799,15 +1622,8 @@ static pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool *async,
 	static unsigned long hva_pfn_cnt = 0;
 	if (((current->at_remote ||
 		INTERESTED_GVA(addr))) &&
-//		 !( gfn > 0x12a800 && gfn < 0x12ff21) &&
-//		 !( gfn > 0xcc013 && gfn < 0xcffeb)) &&
 		NOTINTERESTED_GVA(addr)
 		) {
-//		if (
-//			(!(gfn > 0x12a490 && gfn < 0x12fbf3) &&
-//			!(gfn > 0xcb9f6 && gfn < 0xcffea)) &&
-//			NOTINTERESTED_GVA(gfn)
-//			) {
 			hva_pfn_cnt++;
 			EPTVPRINTK("\t@@ =[%d] <%s> hva_to_pfn/fastslow gfn %llx hva %lx "
 					"%s writable %s &async_ptr %s #%lu\n",
@@ -1815,52 +1631,23 @@ static pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool *async,
 					write_fault ? "W" : "R",
 					writable ? *writable ? "O" : "X" : "-",
 					async ? "O (1st)" : "X (2nd)", hva_pfn_cnt);
-			//if (((hva_pfn_cnt >= 150 && hva_pfn_cnt <= 180) ||
-			//	(hva_pfn_cnt >= 170 && hva_pfn_cnt <= 200) ||
-			//	hva_pfn_cnt >= 200) &&
-			//	current->at_remote
-			//	){
-			//	dump_stack();
-			//}
-//		}
 	}
 #endif
 
 	/* we can do it either atomically or asynchronously, not both */
 	BUG_ON(atomic && async);
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* !First touch - !!pte - check TLB cache
-		Both fast&slow will do __get_user_pages_fast() */
-#endif
 	if (hva_to_pfn_fast(addr, atomic, async, write_fault, writable, &pfn))
 		return pfn; /* succ */
 
 	if (atomic)
 		return KVM_PFN_ERR_FAULT;
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* PAGE FAULT */
-	// hva_to_pfn_slow() =
-	// 		if (async) {
-	//			hold mm lock
-	//			npages = get_user_page_nowait(current, current->mm,
-	//				      addr, write_fault, page);
-	//			release mm lock
-	// 		} else
-	//			__get_user_pages_unlocked(current, current->mm, addr, 1,
-	//									write_fault, 0, page,
-	//									FOLL_TOUCH|FOLL_HWPOISON); /* !forece *
-	/* First touch - !pte */
-#endif
 	npages = hva_to_pfn_slow(addr, async, write_fault, writable, &pfn);
 	if (npages == 1)
 		return pfn;
 
-
-
 #ifdef CONFIG_POPCORN_HYPE
-	/* 0521shold we really need to do afslow?????????? */
 	if (npages == REMOTE_CANNOT_DOWN_MMAP_SEM)
 		return REMOTE_CANNOT_DOWN_MMAP_SEM; /* no need to retry again */
 
@@ -1888,20 +1675,11 @@ static pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool *async,
 			/* Jack's modification */
 			if (cnt >= RETRY_LOCALFAULT) {
 				if (async) {
-					//*async = true; /* Jack: TODO take care this */
-					/* *async:true - try 2nd IOasyncfault
-							:false - dmap()(default) */
-
-					/* Make sure we don't allow *sync=true, which will
-												go 2nd (e.g swapping )*/
-					/* Jack: NOW I NEED IT GO OUT before dmap()'s -87 checking */
 					*async = false;
 				}
-				return REMOTE_CANNOT_DOWN_MMAP_SEM; /* !1, do botton-half */
-				//BUG();
+				return REMOTE_CANNOT_DOWN_MMAP_SEM;
 			}
 		}
-		//schedule();
 		cnt++;
 	}
 #else /* !CONFIG_POPCORN_HYPE */
@@ -1961,8 +1739,8 @@ static pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool *async,
 			if (distributed_remote_process(current) ||
 				(distributed_process(current) && INTERESTED_GVA(addr))) {
 				EPTVPRINTK("\t=afslow %s(): [%d] <%s> [[[SWAPINing pfn %llx]]] "
-								"go to 2nd/asyncIO\n",
-								__func__, current->pid, "?", KVM_PFN_ERR_FAULT);
+							"go to 2nd/asyncIO\n",
+							__func__, current->pid, "?", KVM_PFN_ERR_FAULT);
 			}
 			/* no swap allowed in pophype */
 			BUG_ON(distributed_remote_process(current));
@@ -2783,15 +2561,6 @@ static int kvm_vcpu_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct page *page;
 
 #ifdef CONFIG_POPCORN_HYPE
-	static int first = 1;
-	if (first) {
-		POP_PK("\n=====================================\n");
-#if !POP_CLEAN
-		dump_stack();
-#endif
-		POP_PK("=====================================\n");
-		first = 0;
-	}
 	VCPUPRINTK("\t<%d> kvm_vcpu_fault %p + 0x%lx return phy_page\n",
 			vcpu->vcpu_id, vmf->virtual_address, vmf->pgoff);
 #endif
@@ -2808,18 +2577,6 @@ static int kvm_vcpu_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	} else {
 		return kvm_arch_vcpu_fault(vcpu, vmf);
 	}
-
-#ifdef CONFIG_POPCORN_HYPE
-	VCPUPRINTK("\t\t<%d> %p (+ofs %lx) (usr) - (kern) %s %p ret struct page\n",
-				vcpu->vcpu_id, vmf->virtual_address, vmf->pgoff,
-				vmf->pgoff == 0 ? "vcpu->run" :
-					vmf->pgoff == 1 ? "vcpu->arch.pio_data" :
-									"vcpu->kvm->coalesced_mmio_ring", /* kvm */
-				vmf->pgoff == 0 ? vcpu->run :
-					vmf->pgoff == 1 ? vcpu->arch.pio_data :
-									vcpu->kvm->coalesced_mmio_ring);
-	VCPUPRINTK("\n");
-#endif
 
 	get_page(page);
 	vmf->page = page;
@@ -2838,8 +2595,8 @@ static int kvm_vcpu_mmap(struct file *file, struct vm_area_struct *vma)
 #ifdef CONFIG_POPCORN_HYPE
 	struct kvm_vcpu *vcpu = file->private_data;
 #endif
-	vma->vm_ops = &kvm_vcpu_vm_ops; /*pophype -
-										this has to be install on each kernel */
+	vma->vm_ops = &kvm_vcpu_vm_ops; /*pophype - this has to be
+										installed on each kernel */
 #ifdef CONFIG_POPCORN_HYPE
 	popcorn_vcpu_op = (void *)&kvm_vcpu_vm_ops;
 	VCPUPRINTK("%s(): fd vcpu <%d> installing vm->vm_ops %p "
@@ -2848,14 +2605,6 @@ static int kvm_vcpu_mmap(struct file *file, struct vm_area_struct *vma)
 				vma->vm_start, vma->vm_end);
 
 	if (distributed_process(current)) {
-        // I wanna log hype info for vpu. This [0][fd] is sosososososo important.
-        // I will record all first. Then see how it works.
-        //printk("\n\n");
-        //printk("******************************\n");
-        //printk("%s(): [%d] <%d> mmap addr %lx\n",
-		//		__func__, my_nid, vcpu->vcpu_id, vma->vm_start);
-        //printk("******************************\n");
-        //printk("\n\n");
         if (vma->vm_start) {
 			/* fd is done by pophype */
 			int fd = vcpuid_to_fd(vcpu->vcpu_id);
@@ -2867,7 +2616,6 @@ static int kvm_vcpu_mmap(struct file *file, struct vm_area_struct *vma)
 					vcpu->vcpu_id, vma->vm_start, my_nid, fd, vcpu, current);
 			POP_PK("*********************************************\n");
 			POP_PK("\n\n");
-            //hype_node_info[my_nid][fd]->run = xxx;
             hype_node_info[my_nid][fd]->vcpu = vcpu;
             hype_node_info[my_nid][fd]->uaddr = vma->vm_start;
             hype_node_info[my_nid][fd]->vcpu_id = vcpu->vcpu_id;
@@ -2904,10 +2652,8 @@ static int create_vcpu_fd(struct kvm_vcpu *vcpu)
 {
 	char name[8 + 1 + ITOA_MAX_LEN + 1];
 
-	/* TODO name for remote 0? so that both node has only its vcpu's meta */
 	snprintf(name, sizeof(name), "kvm-vcpu:%d", vcpu->vcpu_id);
 	return anon_inode_getfd(name, &kvm_vcpu_fops, vcpu, O_RDWR | O_CLOEXEC);
-//	return anon_inode_getfd("kvm-vcpu", &kvm_vcpu_fops, vcpu, O_RDWR | O_CLOEXEC);
 }
 
 /*
@@ -3025,16 +2771,9 @@ static long kvm_vcpu_ioctl(struct file *filp,
 		return kvm_arch_vcpu_ioctl(filp, ioctl, arg);
 #endif
 
-#ifdef CONFIG_POPCORN_HYPE
-	// many
-	//PHMIGRATEPRINTK("[%d] %s: going to call vcpu_load "
-	//				"vcpu_id <%d> smp_processor_id() %d\n",
-	//				current->pid, __func__, vcpu->vcpu_id, smp_processor_id());
-#endif
-
 #if defined(CONFIG_POPCORN_HYPE) && POPCORN_DEBUG_FT
 	if (ioctl == KVM_GET_SREGS ||
-			ioctl == KVM_GET_MP_STATE) { // KVM_GET_MSRS //killme
+			ioctl == KVM_GET_MP_STATE) {
 		int lock_retry_lock = 0;
 		PHMIGRATEPRINTK("[%d] <%d> %s: start - 5 (0x%x)\n",
 				current->pid, vcpu->vcpu_id, __func__, ioctl);
@@ -3046,12 +2785,12 @@ static long kvm_vcpu_ioctl(struct file *filp,
 				"mutex debug start\n",
 				current->pid, vcpu->vcpu_id, __func__, ioctl);
 
-		if (!mutex_trylock(&vcpu->mutex)) { // contention
+		if (!mutex_trylock(&vcpu->mutex)) { /* contention */
 			PHMIGRATEPRINTK("[%d] <%d> %s: start - 5.6 (0x%x) "
 					"[debug] lock contention -  the owner is [[[%d]]]\n",
 					current->pid, vcpu->vcpu_id, __func__, ioctl,
 					vcpu->mutex.owner->pid);
-		} else { // no contention (grabed)
+		} else { /* no contention (grabbed) */
 			PHMIGRATEPRINTK("[%d] <%d> %s: start - 5.5 (0x%x) "
 					"[debug] lock GOOD no contention\n",
 					current->pid, vcpu->vcpu_id, __func__, ioctl);
@@ -3073,10 +2812,6 @@ static long kvm_vcpu_ioctl(struct file *filp,
 					"[debug] lock contention #%d time\n",
 					current->pid, vcpu->vcpu_id, __func__,
 					ioctl, lock_retry_lock);
-//			PHMIGRATEPRINTK("[%d] <%d> %s: start - 5.6 (0x%x) "
-//					"[debug] the lock owner is [[[%d]]]\n",
-//					current->pid, vcpu->vcpu_id, __func__, ioctl,
-//					vcpu->mutex.owner->pid);
 		}
 	}
 #endif
@@ -3085,11 +2820,13 @@ static long kvm_vcpu_ioctl(struct file *filp,
 #if defined(CONFIG_POPCORN_HYPE)
 	if (r) {
 		if (unlikely(signal_pending_state(TASK_KILLABLE, current))) {
-			PHMIGRATEPRINTK("[dbg] [%d] <%d> %s: this is the problem r = %d\n",
-				current->pid, vcpu->vcpu_id, __func__, r);
-		}else{
-			PHMIGRATEPRINTK("[dbg] [%d] <%d> %s: this is NOT the problem r = %d\n",
-				current->pid, vcpu->vcpu_id, __func__, r);
+			PHMIGRATEPRINTK("[dbg] [%d] <%d> %s: "
+							"this is the problem r = %d\n",
+							current->pid, vcpu->vcpu_id, __func__, r);
+		} else {
+			PHMIGRATEPRINTK("[dbg] [%d] <%d> %s: "
+							"this is NOT the problem r = %d\n",
+							current->pid, vcpu->vcpu_id, __func__, r);
 		}
 		PHMIGRATEPRINTK("[%d] <%d> %s: start - 5 fail r = %d "
 						"(expect -4 mutex_lock() fails)\n",
@@ -3134,40 +2871,6 @@ static long kvm_vcpu_ioctl(struct file *filp,
 		r = kvm_arch_vcpu_ioctl_run(vcpu, vcpu->run);
 								/* arch/x86/kvm/x86.c */
 		trace_kvm_userspace_exit(vcpu->run->exit_reason, r);
-#ifdef CONFIG_POPCORN_HYPE
-		//if (vcpu->run->exit_reason != KVM_EXIT_IO && current->at_remote) { // 2
-		//if (current->at_remote) // 2
-		//}
-#if 0
-		{ /* pophype debug */
-			static unsigned int cnt = 0;
-			static unsigned int exit_two = 0;
-			//if (vcpu->run->exit_reason == KVM_EXIT_INTERNAL_ERROR) {
-									//17-3 KVM_INTERNAL_ERROR_DELIVERY_EV
-				if (vcpu->run->exit_reason == KVM_EXIT_IO)
-					exit_two++;
-				if (exit_two > 500 && !current->at_remote) // bug...
-					goto outprint;
-
-				cnt++;
-				if (cnt < 1150 || current->at_remote) { // bug
-					//printk("\t[%d][%d]<%d> vcpu->run [[[%p]]] "
-					VMPRINTK("\t[%d/%d] <%d> vcpu->run [[[%p]]] "
-							"->run->exit %u-%u r %d %lx #%u reting!\n",
-							//current->at_remote ? 1:0, current->pid,
-							current->at_remote ? 1:0, current->pid,
-							vcpu->vcpu_id, vcpu->run,
-							vcpu->run->exit_reason,
-							vcpu->run->internal.suberror,
-							r, (unsigned long)r, cnt);
-				}
-				/* a test was done - result: kernel and usr are shareing
-												struct vcpu now (999) workd */
-			//}
-		}
-outprint:
-#endif
-#endif
 		break;
 	case KVM_GET_REGS: {
 		struct kvm_regs *kvm_regs;
@@ -3216,11 +2919,6 @@ out_free1:
 					current->pid, vcpu->vcpu_id, __func__);
 		PHMIGRATEPRINTK("[%d] <%d> %s: KVM_GET_SREGS\n",
 					current->pid, vcpu->vcpu_id, __func__);
-		//static int debug = 0;
-		//if (debug < 15) {
-//			dump_stack(); // kill me
-		//}
-		//debug = 1;
 #endif
 		kvm_sregs = kzalloc(sizeof(struct kvm_sregs), GFP_KERNEL);
 		r = -ENOMEM;
@@ -3705,16 +3403,6 @@ static long kvm_vm_ioctl(struct file *filp,
 #ifdef CONFIG_HAVE_KVM_MSI
 	case KVM_SIGNAL_MSI: {
 		struct kvm_msi msi;
-#if POPHYPE_NET_OPTIMIZE_TMP_DEBUG
-		{
-			static int cnt = 0;
-			cnt++;
-			if (cnt < 100 || !(cnt % 100)) {
-				POP_PK("%s: KVM_SIGNAL_MSI - "
-						"vanilla virtio-host many #%d\n", __func__, cnt);
-			}
-		}
-#endif
 		r = -EFAULT;
 		if (copy_from_user(&msi, argp, sizeof(msi)))
 			goto out;
@@ -3726,16 +3414,12 @@ static long kvm_vm_ioctl(struct file *filp,
 	case KVM_IRQ_LINE_STATUS:
 	case KVM_IRQ_LINE: {
 		struct kvm_irq_level irq_event;
-		/*if (ioctl == KVM_IRQ_LINE)
-			VIRTIOBLKPK("%s: KVM_IRQ_LINE comm=%s\n", __func__, current->comm);*/
 		r = -EFAULT;
 		if (copy_from_user(&irq_event, argp, sizeof(irq_event)))
 			goto out;
 
 		r = kvm_vm_ioctl_irq_line(kvm, &irq_event,
 					ioctl == KVM_IRQ_LINE_STATUS);
-		/*if (ioctl == KVM_IRQ_LINE)
-		            VIRTIOBLKPK("%s: KVM_IRQ_LINE r=%d\n", __func__, r);*/
 		if (r)
 			goto out;
 
@@ -3808,7 +3492,8 @@ out_free_irq_routing:
 		break;
 	default:
 #ifdef CONFIG_POPCORN_HYPE
-		HPPRINTK("%s: (default) -> kvm_arch_vm_ioctl() 0x%x\n", __func__, ioctl);
+		HPPRINTK("%s: (default) -> kvm_arch_vm_ioctl() 0x%x\n",
+												__func__, ioctl);
 #endif
 		r = kvm_arch_vm_ioctl(filp, ioctl, arg);
 	}
@@ -3907,7 +3592,6 @@ static int kvm_dev_ioctl_create_vm(unsigned long type)
 #ifdef CONFIG_POPCORN_HYPE
 	if (distributed_remote_process(current)) { /* remote */
 		HPPRINTK("%s: do nothing now\n", __func__);
-		//return popcorn_kvm_dev_ioctl_create_vm_tsk(type);
 	}
 #endif
 
@@ -4209,7 +3893,6 @@ static int __kvm_io_bus_write(struct kvm_vcpu *vcpu, struct kvm_io_bus *bus,
 			static unsigned long cnt = 0;
 			static unsigned long no_print_cnt = 0;
 			cnt++;
-			//if (cnt > 0 && (cnt < 10000 || idx > 2) ) {
 			if (idx > 0) {
 				/* This is not only for critical net debugging... */
 				CRITICALNETPK("\t\t|| %s(): <%d> bus->dev_count %d "
@@ -4237,9 +3920,6 @@ int kvm_io_bus_write(struct kvm_vcpu *vcpu, enum kvm_bus bus_idx, gpa_t addr,
 	struct kvm_io_bus *bus;
 	struct kvm_io_range range;
 	int r;
-#ifdef CONFIG_POPCORN_HYPE
-    //static unsigned long cnt = 0;
-#endif
 
 	range = (struct kvm_io_range) {
 		.addr = addr,
@@ -4250,14 +3930,6 @@ int kvm_io_bus_write(struct kvm_vcpu *vcpu, enum kvm_bus bus_idx, gpa_t addr,
 	if (!bus)
 		return -ENOMEM;
 
-#ifdef CONFIG_POPCORN_HYPE
-    // many
-	//cnt++;
-    //if (cnt > 0) {
-	//	printk("\t\t|| %s(): <%d> bus->ioeventfd_count %d #%lu\n",
-	//			__func__, vcpu->vcpu_id, bus->ioeventfd_count, cnt);
-	//}
-#endif
 	r = __kvm_io_bus_write(vcpu, bus, &range, val);
 	return r < 0 ? r : 0;
 }
@@ -4519,21 +4191,6 @@ static void kvm_sched_in(struct preempt_notifier *pn, int cpu)
 
 	kvm_arch_sched_in(vcpu, cpu);
 
-#if defined(CONFIG_POPCORN_HYPE) && HYPEBOOTDEBUG && POPHYPE_MIGRATE_VERBOSE_DEBUG
-	{
-		static int cnt = 0;
-		if (!(cnt % 10000)) {
-			PHMIGRATEVPRINTK("------- %s(): <%d> host cpu %d ------- #%d\n",
-										__func__, vcpu->vcpu_id, cpu, cnt);
-		}
-		if ((cnt++ % 10000) == 0) {
-			/* From ...
-				kvm_arch_vcpu_load()
-				vmx_vcpu_load() */
-			//dump_stack(); /* turn on to debug why this happens in default */
-		}
-	}
-#endif
 	kvm_arch_vcpu_load(vcpu, cpu);
 }
 
