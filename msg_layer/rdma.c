@@ -27,11 +27,6 @@
 #endif
 
 
-#if MULTI_MSG_CANNEL_PER_NODE
-//static atomic_t send_rond_robin[MAX_NUM_NODES] = { ATOMIC_INIT(0) };
-//static atomic_t write_rond_robin[MAX_NUM_NODES] = { ATOMIC_INIT(0) };
-#endif
-
 /* this is related to rb size */
 #define MAX_RECV_DEPTH	((PAGE_SIZE << (MAX_ORDER - 1)) / PCN_KMSG_MAX_SIZE)
 #define MAX_SEND_DEPTH	(MAX_RECV_DEPTH)
@@ -106,12 +101,11 @@ struct rdma_handle {
 
 /* RDMA handle for each node */
 static struct rdma_handle *rdma_handles[MAX_NUM_NODES][MAX_CONN_PER_NODE];
-//= { NULL }; // warnning
-/* Jack TODO: multi conn to a node - rdma_handles[MAX_NUM_NODES][MAX_CONN]*/
+/* Workitem: multi conn to a node - rdma_handles[MAX_NUM_NODES][MAX_CONN] */
 
 /* Global protection domain (pd) and memory region (mr) */
-static struct ib_pd *rdma_pd = NULL; // Jack
-static struct ib_mr *rdma_mr = NULL; // Jack
+static struct ib_pd *rdma_pd = NULL;
+static struct ib_mr *rdma_mr = NULL;
 
 /* Global RDMA sink */
 static DEFINE_SPINLOCK(__rdma_slots_lock);
@@ -181,7 +175,6 @@ retry:
 		BUG_ON("maybe not recycling correctly");
 		/* performance related */
 		/* 64k will triger this bug (req addr more -> get_work more) */
-		//io_schedule();
 		udelay(100); /* rr msg usually takes only xx us */
 		goto retry;
 	}
@@ -278,21 +271,7 @@ static void __put_send_work(struct send_work *sw)
 		if (unlikely(test_bit(SW_FLAG_MAPPED, &sw->flags))) {
 			kfree(sw->addr);
 		} else {
-#if HYPE_PERF_CRITICAL_MSG_DEBUG
-//			static unsigned long cnt = 0;
-#endif
 			ring_buffer_put(&send_buffer, sw->addr);
-#if HYPE_PERF_CRITICAL_MSG_DEBUG
-//			cnt++;
-//			if (!(cnt % 2000) || cnt < 100)
-//				printk("(health put) rb util: %lu %lu #%lu\n",
-//						ring_buffer_usage(&send_buffer),
-//						send_buffer.used, cnt);
-//			if (!(cnt % 10000)) {
-//				dump_stack();
-//				printk("\n");
-//			}
-#endif
 		}
 	}
 
@@ -407,8 +386,6 @@ atomic64_t rdma_write_cnt = ATOMIC64_INIT(0);
 
 atomic64_t t_cq_sig_handle = ATOMIC64_INIT(0);
 atomic64_t t_cq_handle_end = ATOMIC64_INIT(0);
-// t_cq_sig_handle = signal to __process_recv // poll_cq
-// t_cq_handle_end = after __process to ib_req_notify_cq end
 
 atomic64_t t_rdma_w_prepare = ATOMIC64_INIT(0);
 atomic64_t t_rdma_w_post = ATOMIC64_INIT(0);
@@ -446,8 +423,6 @@ void rdma_kmsg_stat(struct seq_file *seq, void *v)
 		seq_printf(seq, "%4s  %7ld.%09ld (s)  %3s %-10ld   %3s %-6ld (us)\n",
             "wwai", (atomic64_read(&t_rdma_w_wait)) / NANOSECOND,
                     (atomic64_read(&t_rdma_w_wait)) % NANOSECOND,
-//            "wwai", (atomic64_read(&t_rdma_w_wait) / 1000) / MICROSECOND,
-//                    (atomic64_read(&t_rdma_w_wait) / 1000) % MICROSECOND,
             "cnt", atomic64_read(&rdma_write_cnt),
             "per", atomic64_read(&rdma_write_cnt) ?
 	 atomic64_read(&t_rdma_w_wait)/atomic64_read(&rdma_write_cnt) / 1000 : 0);
@@ -499,21 +474,8 @@ static int __send_to(int to_nid, struct send_work *sw, size_t size)
 	struct ib_send_wr *bad_wr = NULL;
 	int channel;
 	struct rdma_handle *rh;
-/*
-	if (MAX_CONN_PER_NODE > 1) {
-		//int atomic_val = atomic_inc_return(&send_rond_robin[to_nid]);
-		//channel = atomic_val % (MAX_CONN_PER_NODE);
-		//DEVPRINTK("-> send dbg: atomic_val %d mod this %d channel %d\n", atomic_val, (MAX_CONN_PER_NODE), channel);
-		channel = atomic_inc_return(&send_rond_robin[to_nid]) %
-													MAX_CONN_PER_NODE;
-	} else {
-		channel = 0;
-	}
-*/
+
 #if MULTI_MSG_CANNEL_PER_NODE
-	// too much overhead
-	//channel = atomic_inc_return(&send_rond_robin[to_nid]) %
-	//											MAX_CONN_PER_NODE;
 	channel = current->pid % MAX_CONN_PER_NODE;
 #else
 	channel = 0;
@@ -527,7 +489,6 @@ static int __send_to(int to_nid, struct send_work *sw, size_t size)
 #if MULTI_CONN_PER_NODE
 	((struct pcn_kmsg_message *)sw->addr)->header.channel = channel;
 #endif
-	//msg->header.from_nid = my_nid;
 	SRPRINTK("-> send: to_nid %d channel %u\n", to_nid, channel);
 
 
@@ -641,20 +602,7 @@ int rdma_kmsg_write(int to_nid, dma_addr_t rdma_addr, void *addr, size_t size, u
 	ktime_t t2e, t2s = ktime_get();
 #endif
 
-/*
-	if (MAX_CONN_PER_NODE > 1) {
-		//int atomic_val = atomic_inc_return(&write_rond_robin[to_nid]);
-		//channel = atomic_val % (MAX_CONN_PER_NODE);
-		//DEVPRINTK("-> write dbg: atomic_val %d mod this %d channel %d\n", atomic_val, (MAX_CONN_PER_NODE), channel);
-		channel = atomic_inc_return(&write_rond_robin[to_nid]) %
-													MAX_CONN_PER_NODE;
-	} else {
-		channel = 0;
-	}
-*/
 #if MULTI_MSG_CANNEL_PER_NODE
-	//channel = atomic_inc_return(&write_rond_robin[to_nid]) %
-	//											MAX_CONN_PER_NODE;
 	channel = current->pid % MAX_CONN_PER_NODE;
 #else
 	channel = 0;
@@ -757,7 +705,7 @@ void rdma_kmsg_done(struct pcn_kmsg_message *msg)
 			found = true;
 #endif
 			break;
-		} // else { /* try next */ }
+		}
 	}
 
 #ifdef CONFIG_POPCORN_CHECK_SANITY
@@ -886,8 +834,6 @@ retry:
 #if MULTI_CONN_PER_NODE
 			((struct pcn_kmsg_message *)(((struct recv_work *)(wc.wr_id))->addr))->header.channel = *((unsigned int *)cq->cq_context);
 #endif
-//			printk("<- recv: cq->cq_context = %d (%p)\n",
-//					*((int *)cq->cq_context), cq->cq_context);
 			__process_recv(&wc);
 #ifdef CONFIG_POPCORN_STAT_MSG
 			t3s = ktime_get();
@@ -968,7 +914,7 @@ static __init int __setup_pd_cq_qp(struct rdma_handle *rh)
 	/* create queue pair */
 	{
 		struct ib_qp_init_attr qp_attr = {
-			.event_handler = NULL, // qp_event_handler,
+			.event_handler = NULL, /* qp_event_handler, */
 			.qp_context = rh,
 			.cap = {
 					.max_send_wr = (MAX_SEND_DEPTH * MSG_POOL_SIZE),
@@ -1142,7 +1088,7 @@ static __init int __setup_rdma_buffer(const int nr_chunks)
 		goto out_dereg;
 	}
 
-	rdma_mr = mr; //Jack
+	rdma_mr = mr;
 	//printk("lkey: %x, rkey: %x, length: %x\n", mr->lkey, mr->rkey, mr->length);
 	return 0;
 
@@ -1193,7 +1139,7 @@ static int __init __setup_work_request_pools(void)
 		sw->wr.num_sge = 1;
 		sw->wr.opcode = IB_WR_SEND;
 		sw->wr.send_flags = IB_SEND_SIGNALED;
-		//sw->id = j; /* does this matter? if not just for MAX_SEND_DEPTH * MSG_POOL_SIZE here in the beginning (=>remove id) - trying now */
+		//sw->id = j;
 
 		sw->next = send_work_pool;
 		send_work_pool = sw;
@@ -1266,10 +1212,8 @@ static int __connect_to_server(int nid, int iter)
 {
 	int ret;
 	const char *step;
-	struct rdma_handle *rh = rdma_handles[nid][iter]; // MAX_CONN_PER_NODE
+	struct rdma_handle *rh = rdma_handles[nid][iter]; /* MAX_CONN_PER_NODE */
 	int my_nid_iter[2] = {my_nid, iter};
-	//my_nid_iter[0] = my_nid
-	//my_nid_iter[1] = iter;
 
 	step = "create rdma id";
 	rh->cm_id = rdma_create_id(&init_net,
@@ -1280,21 +1224,21 @@ static int __connect_to_server(int nid, int iter)
 	{
 		struct sockaddr_in addr = {
 			.sin_family = AF_INET,
-			.sin_port = htons(RDMA_PORT + iter), // MAX_CONN_PER_NODE
+			.sin_port = htons(RDMA_PORT + iter), /* MAX_CONN_PER_NODE */
 			.sin_addr.s_addr = ip_table[nid],
 		};
 
 		ret = rdma_resolve_addr(rh->cm_id, NULL,
 				(struct sockaddr *)&addr, RDMA_ADDR_RESOLVE_TIMEOUT_MS);
 		if (ret) goto out_err;
-		ret = wait_for_completion_interruptible(&rh->cm_done); // per conn
+		ret = wait_for_completion_interruptible(&rh->cm_done); /* per conn */
 		if (ret || rh->state != RDMA_ADDR_RESOLVED) goto out_err;
 	}
 
 	step = "resolve routing path";
 	ret = rdma_resolve_route(rh->cm_id, RDMA_ADDR_RESOLVE_TIMEOUT_MS);
 	if (ret) goto out_err;
-	ret = wait_for_completion_interruptible(&rh->cm_done); // per conn
+	ret = wait_for_completion_interruptible(&rh->cm_done); /* per conn */
 	if (ret || rh->state != RDMA_ROUTE_RESOLVED) goto out_err;
 
 	/* cm_id->device is valid after the address and route are resolved */
@@ -1311,16 +1255,14 @@ static int __connect_to_server(int nid, int iter)
 	step = "connect";
 	{
 		struct rdma_conn_param conn_param = {
-			//.private_data = &my_nid,
-			//.private_data_len = sizeof(my_nid),
 			.private_data = &my_nid_iter,
 			.private_data_len = sizeof(my_nid_iter),
 		};
 
 		rh->state = RDMA_CONNECTING;
-		ret = rdma_connect(rh->cm_id, &conn_param); // connect to remote
+		ret = rdma_connect(rh->cm_id, &conn_param); /* connect to remote */
 		if (ret) goto out_err;
-		ret = wait_for_completion_interruptible(&rh->cm_done); // per conn
+		ret = wait_for_completion_interruptible(&rh->cm_done); /* per conn */
 		if (ret) goto out_err;
 		if (rh->state != RDMA_CONNECTED) {
 			ret = -ETIMEDOUT;
@@ -1369,7 +1311,6 @@ static int __on_client_connecting(struct rdma_cm_id *cm_id, struct rdma_cm_event
 {
 	int peer_nid = *((int *)cm_event->param.conn.private_data + 0);
 	int peer_nid_iter = *((int *)cm_event->param.conn.private_data + 1);
-	//int peer_nid_iter = *(int *)cm_event->param.conn.private_data;
 	struct rdma_handle *rh = rdma_handles[peer_nid][peer_nid_iter];
 
 	cm_id->context = rh;
@@ -1426,18 +1367,18 @@ static int __listen_to_connection(int iter)
 	int ret;
 	struct sockaddr_in addr = {
 		.sin_family = AF_INET,
-		.sin_port = htons(RDMA_PORT + iter), // MAX_CONN_PER_NODE
+		.sin_port = htons(RDMA_PORT + iter), /* MAX_CONN_PER_NODE */
 		.sin_addr.s_addr = ip_table[my_nid],
 	};
 
 	struct rdma_cm_id *cm_id = rdma_create_id(&init_net,
 			cm_server_event_handler, NULL, RDMA_PS_IB, IB_QPT_RC);
 	if (IS_ERR(cm_id)) return PTR_ERR(cm_id);
-	rdma_handles[my_nid][iter]->cm_id = cm_id; // MAX_CONN_PER_NODE
+	rdma_handles[my_nid][iter]->cm_id = cm_id; /* MAX_CONN_PER_NODE */
 
 	MSGPRINTK("listening from %d - %d\n", my_nid, iter);
 
-	ret = rdma_bind_addr(cm_id, (struct sockaddr *)&addr); // done by addr
+	ret = rdma_bind_addr(cm_id, (struct sockaddr *)&addr); /* done by addr */
 	if (ret) {
 		PCNPRINTK_ERR("Cannot bind server address, %d\n", ret);
 		return ret;
@@ -1579,8 +1520,6 @@ int __init init_kmsg_rdma(void)
 	pcn_kmsg_set_transport(&transport_rdma);
 
 	for (i = 0; i < MAX_NUM_NODES; i++) {
-		//send_rond_robin[i] = ATOMIC_INIT(0);
-		//write_rond_robin[i] = ATOMIC_INIT(0);
 		for (j = 0; j < MAX_CONN_PER_NODE; j++) {
 			struct rdma_handle *rh;
 			rh = rdma_handles[i][j] =
