@@ -1,6 +1,5 @@
 #ifndef __POPCORN_TYPES_H__
 #define __POPCORN_TYPES_H__
-
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/completion.h>
@@ -19,7 +18,7 @@
 #include <asm/kvm_host.h>
 #include <linux/kvm_host.h>
 
-#include <linux/skbuff.h> // vhost-net optimication
+#include <linux/skbuff.h> /* vhost-net optimication */
 
 #define MAX_POPCORN_VCPU 32 /* HACK: not sure why including popcorn/hype_kvm.h doesn't work */
 
@@ -72,16 +71,6 @@ bool __put_task_remote(struct remote_context *rc);
 	pid_t remote_pid;\
 	pid_t origin_pid;\
 	unsigned int personality;\
-	/* \
-	unsigned long def_flags;\
-	sigset_t remote_blocked;\
-	sigset_t remote_real_blocked;\
-	sigset_t remote_saved_sigmask;\
-	struct sigpending remote_pending;\
-	unsigned long sas_ss_sp;\
-	size_t sas_ss_size;\
-	struct k_sigaction action[_NSIG]; \
-	*/ \
 	struct field_arch arch;
 DEFINE_PCN_KMSG(back_migration_request_t, BACK_MIGRATION_FIELDS);
 
@@ -350,8 +339,6 @@ DEFINE_PCN_KMSG(remote_open_request_t, REMOTE_OPEN_REQUEST_FIELDS);
 	REMOTE_OPEN_COMMON_FIELDS
 DEFINE_PCN_KMSG(remote_open_response_t, REMOTE_OPEN_RESPONSE_FIELDS);
 
-// delegate rw
-//	int pos; // not need to exchange pos. Always use origin's pos // so recycle definition of  REMOTE_OPEN
 #define MAX_POPCONR_FILE_RW_SIZE 255
 
 #define DELEGATE_RW_REQUEST_FIELDS \
@@ -368,7 +355,6 @@ DEFINE_PCN_KMSG(delegate_rw_request_t, DELEGATE_RW_REQUEST_FIELDS);
 DEFINE_PCN_KMSG(delegate_rw_response_t, DELEGATE_RW_RESPONSE_FIELDS);
 
 
-// kvm
 #define REMOTE_KVM_CREATE_REQUEST_FIELDS \
 	REMOTE_HYPE_COMMON_FIELDS \
 	unsigned long type;
@@ -386,7 +372,6 @@ DEFINE_PCN_KMSG(pophype_request_t, ORIGIN_HYPE_COMMON_FIELDS);
 	int from_nid;
 DEFINE_PCN_KMSG(pophype_response_t, REMOTE_CHECKIN_VCPU_PID_RESPONSE_FIELDS);
 
-// not used
 #define ORIGIN_CHECKIN_VCPU_PID_REQEUST_FIELDS \
 	ORIGIN_HYPE_COMMON_FIELDS \
 	int from_nid;
@@ -406,8 +391,6 @@ DEFINE_PCN_KMSG(origin_sipi_response_t, ORIGIN_SIPI_RESPONSE_FIELDS);
 	ORIGIN_HYPE_COMMON_FIELDS \
 	struct kvm_lapic_irq irq;
 DEFINE_PCN_KMSG(ipi_request_t, IPI_REQUEST_FIELDS);
-//	int vcpu_id;
-//int vector;
 
 #define IPI_RESPONSE_FIELDS \
 	ORIGIN_HYPE_COMMON_FIELDS \
@@ -476,7 +459,6 @@ DEFINE_PCN_KMSG(update_cpu_table_request_t, UPDATE_CPU_TABLE_REQUEST_FIELDS);
 
 
 /* remote asks remote_tgid = remote->origin origin->remote remote->origin origin->remote */
-// ORIGIN_HYPE_COMMON_FIELDS is a bad name // because not origin but remote
 #define REMOTE_ASK_ORIGIN_TGID_REQUEST_FIELDS \
 	ORIGIN_HYPE_COMMON_FIELDS \
 	int src_tgid; \
@@ -488,9 +470,7 @@ DEFINE_PCN_KMSG(remote_ask_origin_tgid_request_t, REMOTE_ASK_ORIGIN_TGID_REQUEST
 	ORIGIN_HYPE_COMMON_FIELDS \
 	int dst_tgid;
 DEFINE_PCN_KMSG(remote_ask_origin_tgid_response_t, REMOTE_ASK_ORIGIN_TGID_RESPONSE_FIELDS);
-//int dst_tgid;
-//int src_tgid;
-//int origin_pid
+
 #define ORIGIN_ASK_REMOTE_TGID_REQUEST_FIELDS \
 	ORIGIN_HYPE_COMMON_FIELDS \
 	int src_nid; \
@@ -605,17 +585,7 @@ DEFINE_PCN_KMSG(delegate_recvmsg_response_t, DELEGATE_RECVMSG_RESPONSE_FIELDS);
 /***
  * vhost-net optimization
  */
-//struct rx_copy_msg {
 struct pophype_skb {
-	//struct pcn_kmsg_hdr header;
-	//struct ft_pid creator;
-	//int filter_id;
-	//int is_child;
-    //__be16 dport;
-    //__be32 daddr;
-	//long long pckt_id;
-    //long long local_tx;
-
     ktime_t tstamp;
 	char cb[48];
     union {
@@ -624,10 +594,9 @@ struct pophype_skb {
 				__u16   csum_start;
 				__u16   csum_offset;
 			};
-	}; // pophype - old
-	__u32 priority; // pophype - old
-	kmemcheck_bitfield_begin(flags1); // pophype - old
-	//__u8 		local_df:1, // pophype - new doesn't have
+	};
+	__u32 priority;
+	kmemcheck_bitfield_begin(flags1);
 	__u8		cloned:1,
 			ip_summed:2,
 			nohdr:1,
@@ -646,13 +615,10 @@ struct pophype_skb {
         __u16 tc_verd;        /* traffic control verdict */
 #endif
 #endif
-    //__u32 rxhash;	// pophype - new doesn't have
     kmemcheck_bitfield_begin(flags2);
 #ifdef CONFIG_IPV6_NDISC_NODETYPE
 	__u8 ndisc_nodetype:2;
 #endif
-	//__u8 ooo_okay:1; // pophype - new doesn't have
-	//__u8 l4_rxhash:1; // pophype - new doesn't have
 	kmemcheck_bitfield_end(flags2);
 #ifdef CONFIG_NETWORK_SECMARK
         __u32 secmark;
@@ -692,8 +658,6 @@ DEFINE_PCN_KMSG(delegate_net_msg_tx_request_t, DELEGATE_NET_MSG_TX_REQUEST_FIELD
 #define DELEGATE_NET_MSG_TX_RESPONSE_FIELDS \
 	ORIGIN_HYPE_COMMON_FIELDS
 DEFINE_PCN_KMSG(delegate_net_msg_tx_response_t, DELEGATE_NET_MSG_TX_RESPONSE_FIELDS);
-
-
 
 
 /**
