@@ -786,10 +786,6 @@ int virtio_virtnet_poll(struct napi_struct *napi, int budget)
 
 	received = virtnet_receive(rq, budget);
 
-#ifdef CONFIG_POPCORN_HYPE
-	/* This may be the guest polling RX vq */
-#endif
-
 	/* Out of packets? */
 	if (received < budget) {
 		r = virtqueue_enable_cb_prepare(rq->vq);
@@ -805,7 +801,7 @@ int virtio_virtnet_poll(struct napi_struct *napi, int budget)
 }
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
-/* must be called with local_bh_disable()d */
+/* must be called with local_bh_disable() */
 static int virtnet_busy_poll(struct napi_struct *napi)
 {
 	struct receive_queue *rq =
@@ -965,20 +961,6 @@ netdev_tx_t virtio_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
 	int qnum = skb_get_queue_mapping(skb);
-#if 0 // TESTING MY OPTIMIZATION
-#define TESTING_GUEST_TX_PINNED 0
-#if TESTING_GUEST_TX_PINNED
-    /* Popcorn overwrites */
-    if (smp_processor_id() < 2) { /* Hardcode */
-		//int queue_index;
-        //queue_index = smp_processor_id();
-		qnum = smp_processor_id();
-		skb_set_queue_mapping(skb, qnum);
-        /* Remember to overwrite skb */
-        //sk_tx_queue_set(skb, queue_index);
-    }
-#endif
-#endif
 	struct send_queue *sq = &vi->sq[qnum];
 	int err;
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, qnum);
@@ -993,104 +975,26 @@ netdev_tx_t virtio_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	VIRTIOPKTX("going to send packet from comm=%s, smp=%d, vq=%d\n",
 										current->comm, smp_processor_id(), qnum);
 
-#if 0 // DEBUGGING
-	{
-		static u64 cnt = 0;
-		cnt++;
-
-		if ((cnt > 70 && cnt < 200) || !(cnt % 1000)) {
-			POP_PK("(guest) pophype: vhost-net: <%d> %s: %s(): "
-					"skb %p sock %p (net_device) dev %p \"%s\" in_atomic() %d gso %d txq #%d #%llu\n",
-					smp_processor_id(), __FILE__, __func__,
-					skb, skb->sk, dev, dev->name, in_atomic(), skb_is_gso(skb), qnum, cnt);
-			//VHOSTNET_OPTIMIZE_PK("\t\t [[[(guest) %s(): <%d>]]] BUG_ON{ "
-            //            "offset(skb->csum_start %d - skb->data %lu - skb->head %lu)) [[[%d]]]"
-            //            " >= skb_headlen(skb->len %d - skb->data_len %d) [[[%d]]]} csum_offset %u [[csum=%d]] csum %d\n",
-            //            __func__, smp_processor_id(),
-            //            skb->csum_start, (unsigned long)skb->data, (unsigned long)skb->head,
-            //                skb_checksum_start_offset(skb),
-            //            skb->len, skb->data_len,
-            //                skb_headlen(skb),
-            //            skb->csum_offset,
-			//			skb_checksum(skb, skb_checksum_start_offset(skb), skb->len - skb_checksum_start_offset(skb), 0),
-			//			skb->csum);
-			/* At least moment, skb */
-		}
-	}
-#endif
-
 #if POPHYPE_GUEST_NET_OPTIMIZE
 	{
 		static u64 cnt = 0;
 		cnt++;
-#if 0
-		if (cnt > 100 && cnt < 130) {
-			POP_PK("\tpophype: vhost-net: <%d> %s: %s(): "
-					"dump_stack() #%llu\n",
-					smp_processor_id(), __FILE__, __func__, cnt);
-			dump_stack();
-		}
-#endif
 		if ((cnt > 70 && cnt < 200) || !(cnt % 1000)) {
 			POP_PK("\t(guest) pophype: vhost-net: <%d> %s: %s(): "
 					"skb %p sock %p (net_device) dev %p \"%s\" in_atomic() %d gso %d txq #%d #%llu\n",
 					smp_processor_id(), __FILE__, __func__,
 					skb, skb->sk, dev, dev->name, in_atomic(), skb_is_gso(skb), qnum, cnt);
-			//VHOSTNET_OPTIMIZE_PK("\t\t [[[(guest) %s(): <%d>]]] BUG_ON{ "
-            //            "offset(skb->csum_start %d - skb->data %lu - skb->head %lu)) [[[%d]]]"
-            //            " >= skb_headlen(skb->len %d - skb->data_len %d) [[[%d]]]} csum_offset %u [[csum=%d]] csum %d\n",
-            //            __func__, smp_processor_id(),
-            //            skb->csum_start, (unsigned long)skb->data, (unsigned long)skb->head,
-            //                skb_checksum_start_offset(skb),
-            //            skb->len, skb->data_len,
-            //                skb_headlen(skb),
-            //            skb->csum_offset,
-			//			skb_checksum(skb, skb_checksum_start_offset(skb), skb->len - skb_checksum_start_offset(skb), 0),
-			//			skb->csum);
-			/* At least moment, skb */
 		}
 
 		if (smp_processor_id() && !strcmp(dev->name, "eth0") /* perf critical? */
 						&& cnt > 1000) { // debug
-						// TODO only forwar
-						//(cnt > 1000 && cnt < 1100)) {
 			static u64 cnt2 = 0;
-			// ###############################################
-#if 0
-			struct pophype_skb *pskb = guest_skb_to_pophype_skb(skb);
-			int headerlen = skb_headroom(skb);
-			int head_data_len = headerlen + skb->len;
-			/* If skb is linear (i.e., skb->data_len == 0), the length of skb->data is skb->len.
-			If skb is not linear (i.e., skb->data_len != 0),
-					the length of skb->data is (skb->len) - (skb->data_len) for the head ONLY. */
-			int pskb_size = head_data_len + sizeof(*pskb) + 100; // HACK: I'm not using the 100$ right size
-			/* I can tell from here that our implementation copying head + data */
-			//int pskb_size = sizeof(*pskb) + skb->len;
-			cnt2++;
-			VHOSTNET_OPTIMIZE_PK("%s(): <%d> Jack TEST START "
-					"dev \"%s\" skb->dev \"%s\" "
-					"skb %p pskb %p headerlen %d head_data_len %d pskb_size %d (HACKED) gso %d "
-					"#%llu #%llu\n",
-					__func__, smp_processor_id(),
-					dev->name, skb->dev->name,
-					skb, pskb, headerlen, head_data_len, pskb_size, skb_is_gso(skb), cnt, cnt2);
-			BUG_ON(smp_processor_id() > 1); // TODO: HACK FIX THIS IN THE HOST KERNEL // has fixed but in case
-
-
-			/* 1. pophype */
-			//delegate_skb_tx_hypercall(pskb, pskb_size);
-			err = 0;
-#endif
-			/* 2. Vanilla */
 			err = xmit_skb(sq, skb);
 
 			/* Don't wait up for transmitted skbs to be freed. */
 			skb_orphan(skb);
 			nf_reset(skb);
 
-			/* TODO - check outside to match skb syntax */
-			/* TODO - check outside to match skb syntax */
-			/* TODO - check outside to match skb syntax */
 			return NETDEV_TX_OK;
 		} else {
 			/* Try to transmit */
@@ -1959,7 +1863,6 @@ static int virtnet_probe(struct virtio_device *vdev)
 	u16 max_queue_pairs;
 
 #ifdef CONFIG_POPCORN_HYPE
-	//if (smp_processor_id()) { dump_stack(); }
     POP_PK("\t(guest) pophype: virtio-net-driver: pci: net: %s(): <%d> "
 			"vdev %p - "
 			"ALL START from here\n", __func__, smp_processor_id(), vdev);
@@ -2101,7 +2004,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 		dev->needed_headroom = vi->hdr_len;
 
 #if defined(CONFIG_POPCORN_HYPE) && !POPHYPE_HOST_KERNEL
-	vi->curr_queue_pairs = max_queue_pairs; // pophype TODO
+	vi->curr_queue_pairs = max_queue_pairs;
 #else
 	/* Use single tx/rx queue pair as default */
 	vi->curr_queue_pairs = 1;
