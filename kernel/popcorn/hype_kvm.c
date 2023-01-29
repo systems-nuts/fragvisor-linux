@@ -2323,17 +2323,19 @@ static void process_peek_head_len_request(struct work_struct *work)
     res = pcn_kmsg_get(sizeof(*res));
     BUG_ON(!res);
 
-    if (req->vhost == 1)
-        VHOSTPKRX("process_peek_head_len_request: req->vhost=%d (%p)\n", req->vhost, net);
+    if (req->vhost == 1) {
+		VHOSTPKRX("process_peek_head_len_request: req->vhost=%d (%p)\n", req->vhost, net);
+	}
 
-       sock_len = khype_service_peek_head_len(net);
+	sock_len = khype_service_peek_head_len(net);
 
-       if (req->vhost == 1)
-        VHOSTPKRX("process_peek_head_len_request: serviced! sock_len=%zu\n", sock_len);
+	if (req->vhost == 1) {
+		VHOSTPKRX("process_peek_head_len_request: serviced! sock_len=%zu\n", sock_len);
+	}
 
     res->ret = 0;
-       res->sock_len = sock_len;
-       res->from_pid = req->from_pid;
+	res->sock_len = sock_len;
+	res->from_pid = req->from_pid;
     res->ws = req->ws;
     pcn_kmsg_post(PCN_KMSG_TYPE_PEEK_HEAD_LEN_RESPONSE,
                                 from_nid, res, sizeof(*res));
